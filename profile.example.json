@@ -1,0 +1,27 @@
+{
+  "area": 113,
+  "search_period": 7,
+  "pages_per_query": 2,
+  "request_delay_sec": 0.8,
+  "experience": "doesNotMatter",
+  "salary_min_net": 180000,
+  "salary_comfort_net": 250000,
+  "remote": true,
+  "search_queries": [
+    "руководитель проектов",
+    "delivery manager",
+    "project manager внедрение"
+  ],
+  "exclude_title_keywords": [],
+  "exclude_english_keywords": [],
+  "include_title_keywords": [
+    "project",
+    "проджект",
+    "проект",
+    "delivery",
+    "pm",
+    "руководитель"
+  ],
+  "resume_summary": "Краткое резюме для генерации писем.",
+  "cover_letter_template": "Добрый день!\n\nОткликаюсь на вакансию «{title}».\n{body}\n\nИмя"
+}
