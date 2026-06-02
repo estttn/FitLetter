@@ -7,7 +7,7 @@ from fastapi.templating import Jinja2Templates
 from app.collector import collect
 from app.db import init_db, list_vacancies, mark_applied, stats
 
-app = FastAPI(title="HH Job Scout")
+app = FastAPI(title="FitLetter")
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 
