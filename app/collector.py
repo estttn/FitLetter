@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import random
 import time
 import urllib.parse
 import urllib.request
@@ -40,7 +41,7 @@ BROWSER_HEADERS = {
 }
 
 DESC_WORKERS = max(1, int(os.getenv("COLLECT_DESC_WORKERS", "8")))
-LETTER_WORKERS = max(1, int(os.getenv("COLLECT_LETTER_WORKERS", "15")))
+LETTER_WORKERS = max(1, min(12, int(os.getenv("COLLECT_LETTER_WORKERS", "6"))))
 
 
 def build_search_url(query: str, *, page: int, profile: dict) -> str:
@@ -210,6 +211,7 @@ def generate_letters_parallel(
         progress_cb(0, total, 0)
 
     def one(row: dict) -> bool:
+        time.sleep(random.uniform(0.05, 0.35))
         desc = (row.get("description") or "").strip()
         if not desc:
             desc = fetch_vacancy_description(row["url"])
@@ -248,8 +250,11 @@ def generate_letters_parallel(
                 done += 1
             else:
                 failed += 1
-            if progress_cb:
+            if progress_cb and (done + failed) % 3 == 0:
                 progress_cb(done + failed, total, failed)
+
+    if progress_cb:
+        progress_cb(done + failed, total, failed)
 
     return {"letters_done": done, "letters_failed": failed, "letters_total": total}
 

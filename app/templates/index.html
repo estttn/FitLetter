@@ -375,18 +375,22 @@
     lettersBox.innerHTML = '<div class="letters-progress">' + line + '</div>';
   }
 
+  var LETTER_RELOAD_KEY = 'fitletter_letters_reloaded';
   var letterPollTimer = null;
-  function pollLetterProgress(reloadWhenDone) {
+
+  function pollLetterProgress() {
     fetch('/api/collect/progress', { credentials: 'same-origin' })
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (!d.ok) return;
         showLettersProgress(d);
         if (d.running) {
-          letterPollTimer = setTimeout(function () { pollLetterProgress(reloadWhenDone); }, 1500);
+          sessionStorage.removeItem(LETTER_RELOAD_KEY);
+          letterPollTimer = setTimeout(pollLetterProgress, 2500);
           return;
         }
-        if (reloadWhenDone && d.letters_total > 0) {
+        if (d.letters_total > 0 && !sessionStorage.getItem(LETTER_RELOAD_KEY)) {
+          sessionStorage.setItem(LETTER_RELOAD_KEY, '1');
           window.location.reload();
         }
       })
@@ -394,12 +398,23 @@
   }
 
   if (lettersBox) {
-    pollLetterProgress(true);
+    pollLetterProgress();
   }
 
   if (!collectBtn) return;
 
+  document.querySelectorAll('form[action^="/regen/"]').forEach(function (form) {
+    form.addEventListener('submit', function () {
+      var btn = form.querySelector('button[type="submit"]');
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Генерируем…';
+      }
+    });
+  });
+
   collectBtn.addEventListener('click', function () {
+    sessionStorage.removeItem(LETTER_RELOAD_KEY);
     collectBtn.disabled = true;
     loader.classList.add('active');
     if (loaderTitle) loaderTitle.textContent = 'Собираем вакансии с HH';

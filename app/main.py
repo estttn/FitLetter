@@ -16,6 +16,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.auth import user_session_payload, verify_password
 from app.collect_jobs import get_progress
 from app.collector import collect, fetch_vacancy_description
+from app.candidate import merge_profile_for_letters
 from app.db import (
     RESUMES_DIR,
     create_resume,
@@ -35,6 +36,7 @@ from app.db import (
     set_user_status,
     stats,
     update_resume_file,
+    update_vacancy_letter,
 )
 from app.deps import get_session_user, require_admin, require_login
 from app.letters import generate_cover_letter
@@ -403,6 +405,11 @@ async def apply(
     return RedirectResponse(f"/?filter=pending{q}", status_code=303)
 
 
+@app.get("/regen/{vacancy_id}")
+async def regenerate_letter_get(vacancy_id: int):
+    return RedirectResponse("/?regen_error=bad_method", status_code=303)
+
+
 @app.post("/regen/{vacancy_id}")
 async def regenerate_letter(
     request: Request,
@@ -415,19 +422,38 @@ async def regenerate_letter(
     if redir := _redirect_if_needed(user):
         return redir
 
-    v = get_vacancy_for_user(vacancy_id, user["id"])
-    if not v:
-        q = _view_query(filter_name=filter_name, resume_id=resume_id, date_filter=date_filter)
-        return RedirectResponse(f"/?{q}&regen_error=not_found", status_code=303)
+    q = _view_query(filter_name=filter_name, resume_id=resume_id, date_filter=date_filter)
 
-    resume = get_resume(v["resume_id"], user["id"])
-    if not resume:
-        q = _view_query(filter_name=filter_name, resume_id=resume_id, date_filter=date_filter)
-        return RedirectResponse(f"/?{q}&regen_error=no_resume", status_code=303)
-
-    profile = load_resume_profile(resume)
-    desc = fetch_vacancy_description(v["url"])
     try:
+        v = get_vacancy_for_user(vacancy_id, user["id"])
+        if not v:
+            return RedirectResponse(f"/?{q}&regen_error=not_found", status_code=303)
+
+        resume = get_resume(v["resume_id"], user["id"])
+        if not resume:
+            return RedirectResponse(f"/?{q}&regen_error=no_resume", status_code=303)
+
+        ok, err = _ensure_resume_text(user, resume["id"])
+        if not ok:
+            update_vacancy_letter(
+                vacancy_id,
+                user["id"],
+                cover_letter="",
+                letter_status="failed",
+                letter_error=err[:500],
+            )
+            return RedirectResponse(f"/?{q}&regen_error=1", status_code=303)
+
+        profile = merge_profile_for_letters(
+            load_resume_profile(resume),
+            display_name=user.get("display_name") or "",
+            email=user.get("email") or "",
+            resume_text=resume.get("text_content") or "",
+        )
+        desc = (v.get("description") or "").strip()
+        if not desc:
+            desc = fetch_vacancy_description(v["url"])
+
         letter = generate_cover_letter(
             title=v["title"],
             company=v["company"] or "—",
@@ -435,44 +461,25 @@ async def regenerate_letter(
             description=desc,
             profile=profile,
         )
-        upsert_vacancy(
-            {
-                "hh_id": v["hh_id"],
-                "user_id": v["user_id"],
-                "resume_id": v["resume_id"],
-                "title": v["title"],
-                "company": v["company"],
-                "salary": v["salary"],
-                "url": v["url"],
-                "fit": v["fit"],
-                "fit_score": v["fit_score"],
-                "reason": v.get("reason") or "",
-                "cover_letter": letter,
-                "letter_status": "ok",
-                "letter_error": None,
-            }
+        update_vacancy_letter(
+            vacancy_id,
+            user["id"],
+            cover_letter=letter,
+            letter_status="ok",
+            letter_error=None,
         )
-        q = _view_query(filter_name=filter_name, resume_id=resume_id, date_filter=date_filter)
         return RedirectResponse(f"/?{q}&regen_ok=1", status_code=303)
     except Exception as e:
-        upsert_vacancy(
-            {
-                "hh_id": v["hh_id"],
-                "user_id": v["user_id"],
-                "resume_id": v["resume_id"],
-                "title": v["title"],
-                "company": v["company"],
-                "salary": v["salary"],
-                "url": v["url"],
-                "fit": v["fit"],
-                "fit_score": v["fit_score"],
-                "reason": v.get("reason") or "",
-                "cover_letter": v.get("cover_letter") or "",
-                "letter_status": "failed",
-                "letter_error": str(e)[:500],
-            }
-        )
-        q = _view_query(filter_name=filter_name, resume_id=resume_id, date_filter=date_filter)
+        try:
+            update_vacancy_letter(
+                vacancy_id,
+                user["id"],
+                cover_letter="",
+                letter_status="failed",
+                letter_error=str(e)[:500],
+            )
+        except Exception:
+            pass
         return RedirectResponse(f"/?{q}&regen_error=1", status_code=303)
 
 

@@ -62,7 +62,7 @@ def is_bad_letter(text: str) -> bool:
 def is_complete_letter(text: str, profile: dict | None = None) -> bool:
     p = _resolved_profile(profile)
     t = (text or "").strip()
-    if len(t) < 280:
+    if len(t) < 220:
         return False
     if is_bad_letter(t):
         return False
@@ -268,6 +268,10 @@ def _deepseek_letter(
             data = json.loads(resp.read().decode())
     except urllib.error.HTTPError as e:
         body = e.read().decode(errors="replace")[:300]
+        if e.code == 429:
+            raise RuntimeError(
+                "Слишком много запросов к DeepSeek (429) — уменьшите COLLECT_LETTER_WORKERS"
+            ) from e
         raise RuntimeError(f"HTTP {e.code}: {body}") from e
 
     choice = data["choices"][0]

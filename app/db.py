@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,13 +23,29 @@ def _now() -> str:
 
 @contextmanager
 def connect():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=30000")
     try:
         yield conn
     finally:
         conn.close()
+
+
+def _db_retry(fn, *, attempts: int = 6):
+    last: sqlite3.OperationalError | None = None
+    for i in range(attempts):
+        try:
+            return fn()
+        except sqlite3.OperationalError as e:
+            last = e
+            if "locked" not in str(e).lower() or i >= attempts - 1:
+                raise
+            time.sleep(0.15 * (i + 1))
+    if last:
+        raise last
 
 
 def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
@@ -501,7 +518,15 @@ def upsert_vacancy(row: dict) -> bool:
         exists = cur.fetchone()
         if exists:
             existing_letter = (exists["cover_letter"] or "").strip()
-            if existing_letter and exists["letter_status"] == "ok":
+            incoming_letter = (row.get("cover_letter") or "").strip()
+            incoming_status = row.get("letter_status", letter_status)
+            # Keep old letter only when not replacing (e.g. re-scrape without new text).
+            if (
+                existing_letter
+                and exists["letter_status"] == "ok"
+                and incoming_status == "ok"
+                and not incoming_letter
+            ):
                 cover_letter = exists["cover_letter"]
                 letter_status = "ok"
                 letter_error = None
@@ -605,19 +630,22 @@ def update_vacancy_letter(
     letter_status: str,
     letter_error: str | None = None,
 ) -> None:
-    with connect() as conn:
-        conn.execute(
-            """
-            UPDATE vacancies SET
-                cover_letter = ?,
-                letter_status = ?,
-                letter_error = ?,
-                last_letter_try_at = ?
-            WHERE id = ? AND user_id = ?
-            """,
-            (cover_letter, letter_status, letter_error, _now(), vacancy_id, user_id),
-        )
-        conn.commit()
+    def _write() -> None:
+        with connect() as conn:
+            conn.execute(
+                """
+                UPDATE vacancies SET
+                    cover_letter = ?,
+                    letter_status = ?,
+                    letter_error = ?,
+                    last_letter_try_at = ?
+                WHERE id = ? AND user_id = ?
+                """,
+                (cover_letter, letter_status, letter_error, _now(), vacancy_id, user_id),
+            )
+            conn.commit()
+
+    _db_retry(_write)
 
 
 def list_vacancies(
