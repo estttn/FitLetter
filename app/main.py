@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import re
+import subprocess
 import time
 from datetime import datetime
 from pathlib import Path
@@ -530,6 +532,35 @@ async def api_collect_progress(request: Request):
     progress = get_progress(user["id"], int(rid))
     progress["ok"] = True
     return JSONResponse(progress)
+
+
+@app.post("/api/hooks/deploy")
+async def deploy_hook(request: Request):
+    """Production deploy: GitHub Actions calls this with Bearer token (no SSH)."""
+    token = os.environ.get("FITLETTER_DEPLOY_HOOK_TOKEN", "").strip()
+    if not token:
+        return JSONResponse({"ok": False, "error": "hook disabled"}, status_code=503)
+    auth = request.headers.get("Authorization", "")
+    if auth != f"Bearer {token}":
+        return JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
+
+    root = Path(__file__).resolve().parent.parent
+    script = root / "scripts" / "pull_and_deploy.sh"
+    if not script.is_file():
+        return JSONResponse({"ok": False, "error": "deploy script missing"}, status_code=500)
+
+    log_path = root / "data" / "deploy.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(log_path, "ab") as log:
+        log.write(b"\n--- deploy hook ---\n")
+        subprocess.Popen(
+            ["/bin/bash", str(script)],
+            cwd=str(root),
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    return JSONResponse({"ok": True, "message": "deploy started"})
 
 
 @app.get("/health")
