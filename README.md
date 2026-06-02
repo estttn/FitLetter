@@ -1,69 +1,71 @@
 # FitLetter
 
-Подбор вакансий на HeadHunter под ваш профиль: fit-скоринг, персональные сопроводительные письма, трекер откликов.
+   HeadHunter   : fit-,   ,  .
 
-## Ветки
+**Roadmap ( ? , 3 ):** [ROADMAP.md](ROADMAP.md)
 
-| Ветка | Назначение |
+## 
+
+|  |  |
 |-------|------------|
-| **dev** | Разработка. Вся работа и выгрузки сюда. |
-| **main** | Продакшен. Merge из `dev` по запросу ? автодеплой на сервер. |
+| **dev** | .     . |
+| **main** | . Merge  `dev`   ?   . |
 
 ```text
-feature work ? dev ? (по запросу) merge to main ? GitHub Actions ? webhook ? VPS
+feature work ? dev ? ( ) merge to main ? GitHub Actions ? webhook ? VPS
 ```
 
-## Локальный запуск
+##  
 
 ```bash
 python3 -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env      # заполните DEEPSEEK_API_KEY
+cp .env.example .env      #  DEEPSEEK_API_KEY
 cp profile.example.json profile.json
 uvicorn app.main:app --host 0.0.0.0 --port 8090 --reload
 ```
 
-## Деплой (main) — SSH
+##  (main)  SSH
 
-При push в `main` GitHub Actions копирует файлы на VPS по SCP и запускает `deploy.sh`.
+ push  `main` GitHub Actions    VPS  SCP   `deploy.sh`.
 
-Подробно: [deploy-keys/README.md](deploy-keys/README.md)
+: [deploy-keys/README.md](deploy-keys/README.md)
 
-### 1. Один раз на VPS
+### 1.    VPS
 
 ```bash
 cd /opt/hh-job-scout
-git pull origin main   # или scp, если ещё не git
+git pull origin main   #  scp,    git
 bash scripts/install_deploy_pubkey.sh
 ```
 
-### 2. Secrets в GitHub
+### 2. Secrets  GitHub
 
 Settings ? Secrets and variables ? Actions:
 
-| Secret | Значение |
+| Secret |  |
 |--------|----------|
 | `DEPLOY_HOST` | `89.108.98.245` |
 | `DEPLOY_USER` | `root` |
-| `DEPLOY_SSH_KEY` | приватный ключ из `deploy-keys/fitletter_github_actions` (локально, не в git) |
+| `DEPLOY_SSH_KEY` |    `deploy-keys/fitletter_github_actions` (,   git) |
 
-Опционально: webhook `/api/hooks/deploy` (см. `.env.example`) — для деплоя без SCP.
+: webhook `/api/hooks/deploy` (. `.env.example`)     SCP.
 
-## Сбор вакансий
+##  
 
-Кнопка «Обновить с HH» сначала загружает вакансии, затем в фоне параллельно генерирует письма.
+   HH   ,      .
 
-| Переменная | По умолчанию | Назначение |
+|  |   |  |
 |------------|--------------|------------|
-| `COLLECT_DESC_WORKERS` | `8` | Потоки загрузки описаний с HH |
-| `COLLECT_LETTER_WORKERS` | `15` | Потоки запросов к DeepSeek |
+| `COLLECT_DESC_WORKERS` | `8` |     HH |
+| `COLLECT_LETTER_WORKERS` | `15` |    DeepSeek |
 
-## Структура
+## 
 
 ```text
 app/           FastAPI, collector, scorer, letters
 app/templates/ UI
-scripts/       утилиты (purge, regen, deploy)
-data/          SQLite (не в git)
+scripts/        (purge, regen, deploy)
+data/          SQLite (  git)
 ```
