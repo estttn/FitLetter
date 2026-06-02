@@ -323,7 +323,7 @@
                 <span class="resp-badge resp-invited">Приглашение</span>
                 {% elif v.response_status == 'rejected' %}
                 <span class="resp-badge resp-rejected">Отказ</span>
-                {% endif %}
+                {% else %}
                 <div class="letter-actions">
                   <form method="post" action="/response/{{ v.id }}">
                     <input type="hidden" name="resume_id" value="{{ resume_id }}" />
@@ -338,6 +338,7 @@
                     <button type="submit" class="btn-regen">Отказ</button>
                   </form>
                 </div>
+                {% endif %}
               </td>
               {% endif %}
             </tr>
