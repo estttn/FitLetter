@@ -36,5 +36,7 @@ jobs:
           script: |
             set -e
             cd /opt/hh-job-scout
+            mkdir -p data
+            echo "${{ github.sha }}" | cut -c1-7 > data/deploy_rev.txt
             chmod +x deploy.sh run.sh scripts/*.sh 2>/dev/null || true
             ./deploy.sh

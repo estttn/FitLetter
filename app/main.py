@@ -563,6 +563,32 @@ async def deploy_hook(request: Request):
     return JSONResponse({"ok": True, "message": "deploy started"})
 
 
+def _deploy_revision() -> str:
+    root = Path(__file__).resolve().parent.parent
+    env_rev = os.environ.get("FITLETTER_DEPLOY_REV", "").strip()
+    if env_rev:
+        return env_rev
+    rev_file = root / "data" / "deploy_rev.txt"
+    if rev_file.is_file():
+        return rev_file.read_text(encoding="utf-8").strip()
+    if not (root / ".git").is_dir():
+        return ""
+    try:
+        out = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=str(root),
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+        )
+        return out.decode().strip()
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
 @app.get("/health")
 async def health():
-    return {"ok": True}
+    rev = _deploy_revision()
+    payload: dict[str, str | bool] = {"ok": True}
+    if rev:
+        payload["rev"] = rev
+    return payload

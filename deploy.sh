@@ -14,7 +14,11 @@ if [ ! -f profile.json ] && [ -f profile.example.json ]; then
   cp profile.example.json profile.json
 fi
 
+REV="$(git rev-parse --short HEAD 2>/dev/null || echo local)"
+mkdir -p data
+echo "$REV" > data/deploy_rev.txt
+
 systemctl daemon-reload
 systemctl restart hh-job-scout
 systemctl is-active --quiet hh-job-scout
-echo "OK: deployed $(git rev-parse --short HEAD 2>/dev/null || echo local)"
+echo "OK: deployed ${REV}"
