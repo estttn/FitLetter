@@ -11,8 +11,14 @@
     background: var(--surface); border: 1px solid var(--hairline); border-radius: var(--radius-lg);
     padding: 14px 16px; margin-bottom: 16px;
   }
-  .collect-panel-text { font-size: 13px; color: var(--body); line-height: 1.5; max-width: 520px; }
+  .collect-panel-text {
+    font-size: 13px; color: var(--body); line-height: 1.5; flex: 1; min-width: 0;
+  }
   .collect-panel-text strong { color: var(--ink); font-weight: 600; }
+  @media (min-width: 960px) {
+    .collect-panel { align-items: center; }
+    .collect-panel-text { white-space: nowrap; }
+  }
   .collect-btn {
     background: var(--ink); color: var(--bg); border: none; border-radius: var(--radius-sm);
     padding: 8px 16px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: inherit;
@@ -88,6 +94,36 @@
     color: var(--body);
   }
   .letters-progress strong { color: var(--ink); }
+  .letters-progress-active {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    margin-bottom: 16px;
+    padding: 14px 18px;
+    border-radius: var(--radius-lg);
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.4;
+    color: var(--ink);
+    background: linear-gradient(135deg, #fff9eb 0%, #fff4d9 100%);
+    border: 2px solid rgba(180, 120, 24, 0.5);
+    box-shadow: 0 6px 24px rgba(38, 37, 30, 0.12);
+    animation: letters-progress-glow 2.2s ease-in-out infinite;
+  }
+  .letters-progress-active strong { color: var(--ink); font-weight: 700; }
+  @keyframes letters-progress-glow {
+    0%, 100% { box-shadow: 0 6px 24px rgba(38, 37, 30, 0.1); }
+    50% { box-shadow: 0 8px 28px rgba(180, 120, 24, 0.28); }
+  }
+  .letters-progress-warn {
+    margin-bottom: 16px;
+    padding: 12px 16px;
+    border-radius: var(--radius-lg);
+    font-size: 13px;
+    background: var(--warning-bg);
+    border: 1px solid rgba(180, 120, 24, 0.35);
+    color: var(--warning);
+  }
   tr.row-applied td { background: #fafaf7; }
   .applied-date { font-size: 12px; color: var(--muted); white-space: nowrap; }
   .resp-badge {
@@ -362,16 +398,36 @@
 
   function showLettersProgress(d) {
     if (!lettersBox) return;
-    if (!d || (!d.running && !d.letters_total)) {
+    if (!d || !d.letters_total) {
       lettersBox.innerHTML = '';
       return;
     }
     var total = d.letters_total || 0;
-    var line = d.running
-      ? '<strong>Письма:</strong> ' + (d.letters_processed || 0) + ' / ' + total + '…'
-      : '<strong>Письма готовы:</strong> ' + (d.letters_done || 0) + ' из ' + total +
-        (d.letters_failed ? ' · ошибок: ' + d.letters_failed : '');
-    lettersBox.innerHTML = '<div class="letters-progress">' + line + '</div>';
+    var ok = d.letters_done || 0;
+    var failed = d.letters_failed || 0;
+
+    if (!d.running && ok >= total && failed === 0) {
+      lettersBox.innerHTML = '';
+      return;
+    }
+
+    if (d.running) {
+      var processed = d.letters_processed || 0;
+      lettersBox.innerHTML =
+        '<div class="letters-progress-active" role="status" aria-live="polite">' +
+        '<strong>Генерируем письма:</strong> ' + processed + ' / ' + total + '</div>';
+      return;
+    }
+
+    if (failed > 0) {
+      lettersBox.innerHTML =
+        '<div class="letters-progress-warn" role="status">' +
+        '<strong>Готово:</strong> ' + ok + ' из ' + total + ' · ошибок: ' + failed +
+        ' — откройте вакансию и нажмите «Сделать новый»</div>';
+      return;
+    }
+
+    lettersBox.innerHTML = '';
   }
 
   var LETTER_RELOAD_KEY = 'fitletter_letters_reloaded';
