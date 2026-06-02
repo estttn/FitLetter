@@ -14,9 +14,13 @@ if [ ! -f profile.json ] && [ -f profile.example.json ]; then
   cp profile.example.json profile.json
 fi
 
-REV="$(git rev-parse --short HEAD 2>/dev/null || echo local)"
 mkdir -p data
-echo "$REV" > data/deploy_rev.txt
+if REV="$(git rev-parse --short HEAD 2>/dev/null)"; then
+  echo "$REV" > data/deploy_rev.txt
+elif [ ! -s data/deploy_rev.txt ]; then
+  echo "local" > data/deploy_rev.txt
+fi
+REV="$(cat data/deploy_rev.txt)"
 
 systemctl daemon-reload
 systemctl restart hh-job-scout
