@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Регистрация — FitLetter{% endblock %}
+{% block body %}
+<div class="auth-wrap">
+  <div class="auth-card">
+    <div class="brand" style="padding:0 0 20px"><div class="brand-mark">FL</div> Регистрация</div>
+    {% if error == 'username' %}<div class="alert alert-error">Логин: 3–32 символа, латиница, цифры, _</div>{% endif %}
+    {% if error == 'password' %}<div class="alert alert-error">Пароль минимум 6 символов</div>{% endif %}
+    {% if error == 'mismatch' %}<div class="alert alert-error">Пароли не совпадают</div>{% endif %}
+    {% if error == 'taken' %}<div class="alert alert-error">Такой логин уже занят</div>{% endif %}
+    <form method="post" action="/register">
+      <div class="field"><label>Логин</label><input name="username" required pattern="[a-zA-Z0-9_]{3,32}" /></div>
+      <div class="field"><label>Имя</label><input name="display_name" placeholder="Как к вам обращаться" /></div>
+      <div class="field"><label>Email</label><input name="email" type="email" /></div>
+      <div class="field"><label>Пароль</label><input name="password" type="password" required minlength="6" /></div>
+      <div class="field"><label>Повтор пароля</label><input name="password2" type="password" required /></div>
+      <button class="btn" type="submit">Отправить заявку</button>
+    </form>
+    <p style="margin-top:16px;font-size:13px;color:var(--muted)"><a href="/login">Уже есть аккаунт</a></p>
+  </div>
+</div>
+{% endblock %}

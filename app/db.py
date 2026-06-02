@@ -1,69 +1,487 @@
+from __future__ import annotations
+
+import json
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
+
+from app.auth import ADMIN_PASSWORD, ADMIN_USERNAME, hash_password
 
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "hhscout.db"
+RESUMES_DIR = Path(__file__).resolve().parent.parent / "data" / "resumes"
+
+FIT_SCORE = {"yes": 90, "partial": 65, "no": 0}
 
 
-def init_db() -> None:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with connect() as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS vacancies (
-                id TEXT PRIMARY KEY,
-                title TEXT NOT NULL,
-                company TEXT,
-                salary TEXT,
-                url TEXT NOT NULL,
-                fit TEXT NOT NULL,
-                reason TEXT,
-                cover_letter TEXT NOT NULL,
-                applied INTEGER NOT NULL DEFAULT 0,
-                first_seen TEXT NOT NULL,
-                last_seen TEXT NOT NULL
-            )
-            """
-        )
-        conn.commit()
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 @contextmanager
 def connect():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
     try:
         yield conn
     finally:
         conn.close()
 
 
-def upsert_vacancy(row: dict) -> bool:
-    """Returns True if this is a newly inserted vacancy."""
-    now = datetime.now(timezone.utc).isoformat()
+def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return {r[1] for r in rows}
+
+
+def init_db() -> None:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    RESUMES_DIR.mkdir(parents=True, exist_ok=True)
     with connect() as conn:
-        cur = conn.execute("SELECT id FROM vacancies WHERE id = ?", (row["id"],))
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                display_name TEXT,
+                email TEXT,
+                role TEXT NOT NULL DEFAULT 'user',
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS resumes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                file_path TEXT,
+                text_content TEXT NOT NULL DEFAULT '',
+                profile_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        _ensure_vacancies_schema(conn)
+        _seed_admin(conn)
+        _migrate_legacy_vacancies(conn)
+        conn.commit()
+
+
+def _create_vacancies_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS vacancies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            hh_id TEXT NOT NULL,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            resume_id INTEGER NOT NULL REFERENCES resumes(id) ON DELETE CASCADE,
+            title TEXT NOT NULL,
+            company TEXT,
+            salary TEXT,
+            url TEXT NOT NULL,
+            fit TEXT NOT NULL,
+            fit_score INTEGER NOT NULL DEFAULT 0,
+            reason TEXT,
+            cover_letter TEXT NOT NULL,
+            applied INTEGER NOT NULL DEFAULT 0,
+            first_seen TEXT NOT NULL,
+            last_seen TEXT NOT NULL,
+            UNIQUE (hh_id, user_id, resume_id)
+        )
+        """
+    )
+
+
+def _ensure_vacancies_schema(conn: sqlite3.Connection) -> None:
+    exists = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='vacancies'"
+    ).fetchone()
+    if not exists:
+        _create_vacancies_table(conn)
+        return
+    cols = _table_columns(conn, "vacancies")
+    if "user_id" in cols:
+        return
+    conn.execute("ALTER TABLE vacancies RENAME TO vacancies_legacy")
+    _create_vacancies_table(conn)
+
+
+def _migrate_legacy_vacancies(conn: sqlite3.Connection) -> None:
+    if not conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='vacancies_legacy'"
+    ).fetchone():
+        return
+    admin = conn.execute(
+        "SELECT id FROM users WHERE username = ? COLLATE NOCASE",
+        (ADMIN_USERNAME,),
+    ).fetchone()
+    if not admin:
+        return
+    admin_id = admin[0]
+    resume = conn.execute(
+        "SELECT id FROM resumes WHERE user_id = ? ORDER BY id LIMIT 1",
+        (admin_id,),
+    ).fetchone()
+    if not resume:
+        return
+    resume_id = resume[0]
+    for row in conn.execute("SELECT * FROM vacancies_legacy").fetchall():
+        d = dict(row)
+        hh_id = str(d.get("id") or d.get("hh_id") or "")
+        if not hh_id:
+            continue
+        fit = d.get("fit", "partial")
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO vacancies (
+                hh_id, user_id, resume_id, title, company, salary, url,
+                fit, fit_score, reason, cover_letter, applied, first_seen, last_seen
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                hh_id,
+                admin_id,
+                resume_id,
+                d["title"],
+                d.get("company") or "—",
+                d.get("salary") or "—",
+                d["url"],
+                fit,
+                FIT_SCORE.get(fit, 65),
+                d.get("reason") or "",
+                d.get("cover_letter") or "",
+                d.get("applied") or 0,
+                d.get("first_seen") or _now(),
+                d.get("last_seen") or _now(),
+            ),
+        )
+
+
+def _seed_admin(conn: sqlite3.Connection) -> None:
+    row = conn.execute(
+        "SELECT id FROM users WHERE username = ? COLLATE NOCASE",
+        (ADMIN_USERNAME,),
+    ).fetchone()
+    if row:
+        conn.execute(
+            """
+            UPDATE users SET role = 'admin', status = 'active',
+                password_hash = ?, display_name = COALESCE(display_name, ?)
+            WHERE id = ?
+            """,
+            (hash_password(ADMIN_PASSWORD), ADMIN_USERNAME, row[0]),
+        )
+        admin_id = row[0]
+    else:
+        now = _now()
+        cur = conn.execute(
+            """
+            INSERT INTO users (username, password_hash, display_name, role, status, created_at)
+            VALUES (?, ?, ?, 'admin', 'active', ?)
+            """,
+            (ADMIN_USERNAME, hash_password(ADMIN_PASSWORD), ADMIN_USERNAME, now),
+        )
+        admin_id = cur.lastrowid
+    has_resume = conn.execute(
+        "SELECT id FROM resumes WHERE user_id = ? LIMIT 1",
+        (admin_id,),
+    ).fetchone()
+    if not has_resume:
+        _create_resume(
+            conn,
+            user_id=admin_id,
+            name="Основное резюме",
+            text_content="",
+            profile_json=_default_profile_json(""),
+        )
+
+
+def default_profile_json(resume_summary: str) -> str:
+    base = {
+        "area": 113,
+        "search_period": 7,
+        "pages_per_query": 2,
+        "request_delay_sec": 0.8,
+        "letter_delay_sec": 0.5,
+        "experience": "doesNotMatter",
+        "salary_min_net": 180000,
+        "salary_comfort_net": 250000,
+        "remote": True,
+        "search_queries": [
+            "руководитель проектов",
+            "delivery manager",
+            "project manager внедрение",
+        ],
+        "exclude_title_keywords": [],
+        "exclude_english_keywords": [],
+        "include_title_keywords": [
+            "project",
+            "проджект",
+            "проект",
+            "delivery",
+            "pm",
+            "руководитель",
+        ],
+        "resume_summary": resume_summary[:8000] if resume_summary else "",
+    }
+    return json.dumps(base, ensure_ascii=False)
+
+
+def _default_profile_json(resume_summary: str) -> str:
+    return default_profile_json(resume_summary)
+
+
+def update_resume_file(
+    resume_id: int,
+    user_id: int,
+    *,
+    file_path: str,
+    text_content: str,
+) -> None:
+    profile_json = default_profile_json(text_content)
+    with connect() as conn:
+        conn.execute(
+            """
+            UPDATE resumes SET file_path = ?, text_content = ?, profile_json = ?
+            WHERE id = ? AND user_id = ?
+            """,
+            (file_path, text_content, profile_json, resume_id, user_id),
+        )
+        conn.commit()
+
+
+def get_user_by_username(username: str) -> dict | None:
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM users WHERE username = ? COLLATE NOCASE",
+            (username.strip(),),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def get_user_by_id(user_id: int) -> dict | None:
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def create_user(
+    *,
+    username: str,
+    password: str,
+    display_name: str | None = None,
+    email: str | None = None,
+    role: str = "user",
+    status: str = "pending",
+) -> int:
+    with connect() as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO users (username, password_hash, display_name, email, role, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                username.strip(),
+                hash_password(password),
+                display_name or username.strip(),
+                email,
+                role,
+                status,
+                _now(),
+            ),
+        )
+        conn.commit()
+        return int(cur.lastrowid)
+
+
+def list_pending_users() -> list[dict]:
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM users WHERE status = 'pending' AND role = 'user'
+            ORDER BY created_at ASC
+            """
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def list_all_users() -> list[dict]:
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM users WHERE role = 'user' ORDER BY created_at DESC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def set_user_status(user_id: int, status: str) -> None:
+    with connect() as conn:
+        conn.execute("UPDATE users SET status = ? WHERE id = ?", (status, user_id))
+        conn.commit()
+
+
+def list_active_users_with_resumes() -> list[dict]:
+    with connect() as conn:
+        users = conn.execute(
+            "SELECT * FROM users WHERE status = 'active'"
+        ).fetchall()
+        out = []
+        for u in users:
+            ud = dict(u)
+            resumes = conn.execute(
+                "SELECT * FROM resumes WHERE user_id = ? ORDER BY id",
+                (ud["id"],),
+            ).fetchall()
+            ud["resumes"] = [dict(r) for r in resumes]
+            if ud["resumes"]:
+                out.append(ud)
+    return out
+
+
+def _create_resume(
+    conn: sqlite3.Connection,
+    *,
+    user_id: int,
+    name: str,
+    text_content: str,
+    profile_json: str,
+    file_path: str | None = None,
+) -> int:
+    cur = conn.execute(
+        """
+        INSERT INTO resumes (user_id, name, file_path, text_content, profile_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (user_id, name, file_path, text_content, profile_json, _now()),
+    )
+    return int(cur.lastrowid)
+
+
+def create_resume(
+    *,
+    user_id: int,
+    name: str,
+    text_content: str,
+    file_path: str | None = None,
+) -> int:
+    profile_json = _default_profile_json(text_content)
+    with connect() as conn:
+        rid = _create_resume(
+            conn,
+            user_id=user_id,
+            name=name,
+            text_content=text_content,
+            profile_json=profile_json,
+            file_path=file_path,
+        )
+        conn.commit()
+        return rid
+
+
+def list_resumes(user_id: int) -> list[dict]:
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM resumes WHERE user_id = ? ORDER BY id DESC",
+            (user_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_resume(resume_id: int, user_id: int) -> dict | None:
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM resumes WHERE id = ? AND user_id = ?",
+            (resume_id, user_id),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def delete_resume(resume_id: int, user_id: int) -> bool:
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT file_path FROM resumes WHERE id = ? AND user_id = ?",
+            (resume_id, user_id),
+        ).fetchone()
+        if not row:
+            return False
+        conn.execute(
+            "DELETE FROM vacancies WHERE resume_id = ? AND user_id = ?",
+            (resume_id, user_id),
+        )
+        conn.execute(
+            "DELETE FROM resumes WHERE id = ? AND user_id = ?",
+            (resume_id, user_id),
+        )
+        conn.commit()
+    if row["file_path"]:
+        path = Path(row["file_path"])
+        if path.exists():
+            path.unlink(missing_ok=True)
+    return True
+
+
+def load_resume_profile(resume: dict) -> dict:
+    return json.loads(resume.get("profile_json") or "{}")
+
+
+def upsert_vacancy(row: dict) -> bool:
+    now = _now()
+    fit = row["fit"]
+    fit_score = row.get("fit_score", FIT_SCORE.get(fit, 65))
+    with connect() as conn:
+        cur = conn.execute(
+            """
+            SELECT id FROM vacancies
+            WHERE hh_id = ? AND user_id = ? AND resume_id = ?
+            """,
+            (row["hh_id"], row["user_id"], row["resume_id"]),
+        )
         exists = cur.fetchone()
         if exists:
             conn.execute(
-                "UPDATE vacancies SET last_seen = ?, salary = COALESCE(?, salary) WHERE id = ?",
-                (now, row.get("salary"), row["id"]),
+                """
+                UPDATE vacancies SET
+                    last_seen = ?,
+                    salary = COALESCE(?, salary),
+                    fit = ?,
+                    fit_score = ?,
+                    reason = COALESCE(?, reason),
+                    cover_letter = COALESCE(?, cover_letter)
+                WHERE id = ?
+                """,
+                (
+                    now,
+                    row.get("salary"),
+                    fit,
+                    fit_score,
+                    row.get("reason"),
+                    row.get("cover_letter"),
+                    exists[0],
+                ),
             )
             conn.commit()
             return False
         conn.execute(
             """
-            INSERT INTO vacancies (id, title, company, salary, url, fit, reason, cover_letter, applied, first_seen, last_seen)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+            INSERT INTO vacancies (
+                hh_id, user_id, resume_id, title, company, salary, url,
+                fit, fit_score, reason, cover_letter, applied, first_seen, last_seen
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
             """,
             (
-                row["id"],
+                row["hh_id"],
+                row["user_id"],
+                row["resume_id"],
                 row["title"],
                 row.get("company") or "—",
                 row.get("salary") or "—",
                 row["url"],
-                row["fit"],
+                fit,
+                fit_score,
                 row.get("reason") or "",
                 row["cover_letter"],
                 now,
@@ -74,37 +492,74 @@ def upsert_vacancy(row: dict) -> bool:
         return True
 
 
-def list_vacancies(*, only_new: bool = False, hide_applied: bool = False) -> list[dict]:
-    clauses = []
-    if only_new:
-        clauses.append("date(first_seen) = date(last_seen)")
+def list_vacancies(
+    user_id: int,
+    resume_id: int,
+    *,
+    hide_applied: bool = False,
+    fit_min: int | None = None,
+    date_filter: str | None = None,
+    sort: str = "date_desc",
+) -> list[dict]:
+    clauses = ["user_id = ?", "resume_id = ?"]
+    params: list[Any] = [user_id, resume_id]
+
     if hide_applied:
         clauses.append("applied = 0")
-    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    if fit_min is not None:
+        clauses.append("fit_score >= ?")
+        params.append(fit_min)
+    if date_filter == "today":
+        clauses.append("date(first_seen) = date('now', 'localtime')")
+    elif date_filter == "yesterday":
+        clauses.append("date(first_seen) = date('now', 'localtime', '-1 day')")
+    elif date_filter == "week":
+        clauses.append("date(first_seen) >= date('now', 'localtime', '-7 days')")
+
+    where = "WHERE " + " AND ".join(clauses)
+    order = {
+        "date_desc": "first_seen DESC",
+        "date_asc": "first_seen ASC",
+        "fit_desc": "fit_score DESC, first_seen DESC",
+    }.get(sort, "first_seen DESC")
+
     with connect() as conn:
         rows = conn.execute(
-            f"""
-            SELECT * FROM vacancies
-            {where}
-            ORDER BY
-              CASE fit WHEN 'yes' THEN 0 WHEN 'partial' THEN 1 ELSE 2 END,
-              first_seen DESC
-            """
+            f"SELECT * FROM vacancies {where} ORDER BY {order}",
+            params,
         ).fetchall()
     return [dict(r) for r in rows]
 
 
-def mark_applied(vacancy_id: str) -> None:
+def mark_applied(vacancy_id: int, user_id: int) -> bool:
     with connect() as conn:
-        conn.execute("UPDATE vacancies SET applied = 1 WHERE id = ?", (vacancy_id,))
+        cur = conn.execute(
+            "UPDATE vacancies SET applied = 1 WHERE id = ? AND user_id = ?",
+            (vacancy_id, user_id),
+        )
         conn.commit()
+        return cur.rowcount > 0
 
 
-def stats() -> dict:
+def stats(user_id: int, resume_id: int) -> dict:
     with connect() as conn:
-        total = conn.execute("SELECT COUNT(*) FROM vacancies").fetchone()[0]
-        applied = conn.execute("SELECT COUNT(*) FROM vacancies WHERE applied = 1").fetchone()[0]
+        total = conn.execute(
+            "SELECT COUNT(*) FROM vacancies WHERE user_id = ? AND resume_id = ?",
+            (user_id, resume_id),
+        ).fetchone()[0]
+        applied = conn.execute(
+            """
+            SELECT COUNT(*) FROM vacancies
+            WHERE user_id = ? AND resume_id = ? AND applied = 1
+            """,
+            (user_id, resume_id),
+        ).fetchone()[0]
         new_today = conn.execute(
-            "SELECT COUNT(*) FROM vacancies WHERE date(first_seen) = date('now')"
+            """
+            SELECT COUNT(*) FROM vacancies
+            WHERE user_id = ? AND resume_id = ?
+              AND date(first_seen) = date('now', 'localtime')
+            """,
+            (user_id, resume_id),
         ).fetchone()[0]
     return {"total": total, "applied": applied, "new_today": new_today}

@@ -5,6 +5,7 @@ __pycache__/
 *.pyo
 .env
 data/
+!data/.gitkeep
 *.db
 *.db-journal
 *.log

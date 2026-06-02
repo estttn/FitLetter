@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Админ — FitLetter{% endblock %}
+{% block body %}
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand"><div class="brand-mark">FL</div> FitLetter</div>
+    <nav class="nav">
+      <a href="/">Вакансии</a>
+      <a href="/resumes">Резюме</a>
+      <a href="/admin" class="active">Админ</a>
+      <form method="post" action="/logout"><button type="submit" class="linkish">Выйти</button></form>
+    </nav>
+    <div class="sidebar-foot">{{ user.display_name }}<br />администратор</div>
+  </aside>
+  <main class="main">
+    <header class="page-header">
+      <h1>Администрирование</h1>
+      <p>Заявки на регистрацию и управление пользователями</p>
+    </header>
+    <div class="tabs">
+      <a href="/admin?tab=pending" class="{{ 'active' if tab == 'pending' else '' }}">Заявки ({{ pending|length }})</a>
+      <a href="/admin?tab=users" class="{{ 'active' if tab == 'users' else '' }}">Пользователи</a>
+    </div>
+
+    {% if tab == 'pending' %}
+    <section class="card">
+      <div class="card-head">Ожидают подтверждения</div>
+      {% if pending %}
+      <table>
+        <thead><tr><th>Логин</th><th>Имя</th><th>Email</th><th>Дата</th><th></th></tr></thead>
+        <tbody>
+          {% for u in pending %}
+          <tr>
+            <td>{{ u.username }}</td>
+            <td>{{ u.display_name or '—' }}</td>
+            <td>{{ u.email or '—' }}</td>
+            <td>{{ fmt_date(u.created_at) }}</td>
+            <td>
+              <form method="post" action="/admin/approve/{{ u.id }}" style="display:inline"><button class="btn btn-success" type="submit">Принять</button></form>
+              <form method="post" action="/admin/reject/{{ u.id }}" style="display:inline;margin-left:6px"><button class="btn btn-danger" type="submit">Отклонить</button></form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="card-body" style="color:var(--muted)">Нет новых заявок</div>
+      {% endif %}
+    </section>
+    {% else %}
+    <section class="card">
+      <div class="card-head">Все пользователи</div>
+      {% if users %}
+      <table>
+        <thead><tr><th>Логин</th><th>Имя</th><th>Email</th><th>Статус</th><th>Дата</th><th></th></tr></thead>
+        <tbody>
+          {% for u in users %}
+          <tr>
+            <td>{{ u.username }}</td>
+            <td>{{ u.display_name or '—' }}</td>
+            <td>{{ u.email or '—' }}</td>
+            <td>{{ u.status }}</td>
+            <td>{{ fmt_date(u.created_at) }}</td>
+            <td>
+              {% if u.status == 'blocked' %}
+              <form method="post" action="/admin/unblock/{{ u.id }}"><button class="btn btn-success" type="submit">Разблокировать</button></form>
+              {% elif u.status == 'active' %}
+              <form method="post" action="/admin/block/{{ u.id }}"><button class="btn btn-danger" type="submit">Заблокировать</button></form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="card-body" style="color:var(--muted)">Пользователей пока нет</div>
+      {% endif %}
+    </section>
+    {% endif %}
+  </main>
+</div>
+{% endblock %}

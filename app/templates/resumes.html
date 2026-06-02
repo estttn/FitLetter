@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Резюме — FitLetter{% endblock %}
+{% block body %}
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand"><div class="brand-mark">FL</div> FitLetter</div>
+    <nav class="nav">
+      <a href="/">Вакансии</a>
+      <a href="/resumes" class="active">Резюме</a>
+      {% if user.role == 'admin' %}<a href="/admin">Админ</a>{% endif %}
+      <form method="post" action="/logout"><button type="submit" class="linkish">Выйти</button></form>
+    </nav>
+    <div class="sidebar-foot">{{ user.display_name }}</div>
+  </aside>
+  <main class="main">
+    <header class="page-header">
+      <h1>Мои резюме</h1>
+      <p>Загрузите одно или несколько резюме — сбор вакансий идёт для каждого автоматически</p>
+    </header>
+
+    {% if msg == 'ok' %}<div class="alert alert-ok">Резюме загружено</div>{% endif %}
+    {% if msg == 'deleted' %}<div class="alert alert-ok">Резюме удалено</div>{% endif %}
+    {% if msg == 'badtype' %}<div class="alert alert-error">Формат не поддерживается. Допустимо: {{ supported }}</div>{% endif %}
+    {% if msg == 'big' %}<div class="alert alert-error">Файл больше 5 МБ</div>{% endif %}
+    {% if msg == 'parse' %}<div class="alert alert-error">Не удалось прочитать файл</div>{% endif %}
+
+    <section class="card">
+      <div class="card-head">Загрузить резюме</div>
+      <div class="card-body">
+        <form method="post" action="/resumes/upload" enctype="multipart/form-data">
+          <div class="field"><label>Название</label><input name="name" placeholder="Например: PM delivery" required /></div>
+          <div class="field"><label>Файл ({{ supported }})</label><input name="file" type="file" required accept=".txt,.md,.pdf,.docx" /></div>
+          <button class="btn" type="submit">Загрузить</button>
+        </form>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">Список резюме</div>
+      {% if resumes %}
+      <table>
+        <thead><tr><th>Название</th><th>Загружено</th><th>Текст</th><th></th></tr></thead>
+        <tbody>
+          {% for r in resumes %}
+          <tr>
+            <td>{{ r.name }}</td>
+            <td>{{ fmt_date(r.created_at) }}</td>
+            <td style="max-width:320px;font-size:12px;color:var(--muted)">{{ (r.text_content or '')[:120] }}{% if r.text_content and r.text_content|length > 120 %}…{% endif %}</td>
+            <td>
+              <form method="post" action="/resumes/delete/{{ r.id }}" onsubmit="return confirm('Удалить резюме и связанные вакансии?')">
+                <button class="btn btn-danger" type="submit">Удалить</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="card-body" style="color:var(--muted)">Резюме пока нет — загрузите первое, чтобы начать подбор вакансий.</div>
+      {% endif %}
+    </section>
+  </main>
+</div>
+{% endblock %}

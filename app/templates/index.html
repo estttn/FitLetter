@@ -1,241 +1,148 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>FitLetter</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-  <style>
-    :root {
-      --bg: #f7f7f4;
-      --surface: #ffffff;
-      --surface-muted: #f2f1ed;
-      --ink: #26251e;
-      --body: #5a5852;
-      --muted: #807d72;
-      --hairline: #e6e5e0;
-      --hairline-soft: #efeee8;
-      --sidebar-active: #ecebe6;
-      --accent: #f54e00;
-      --success: #1f8a65;
-      --success-bg: #e6f4ea;
-      --success-ink: #065f46;
-      --warning: #c08532;
-      --warning-bg: #faf3e8;
-      --shadow-card: 0 0 0 1px rgba(38, 37, 30, 0.06);
-      --radius-sm: 6px;
-      --radius-md: 10px;
-      --radius-lg: 12px;
-      --radius-pill: 999px;
-      --font: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-      --sidebar-w: 220px;
-    }
-    * { box-sizing: border-box; }
-    html, body { height: 100%; margin: 0; }
-    body { font-family: var(--font); font-size: 14px; line-height: 1.5; color: var(--ink); background: var(--bg); -webkit-font-smoothing: antialiased; }
-    .app { display: flex; min-height: 100vh; }
-    .sidebar { width: var(--sidebar-w); flex-shrink: 0; padding: 20px 12px; border-right: 1px solid var(--hairline); background: var(--bg); position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; }
-    .brand { display: flex; align-items: center; gap: 10px; padding: 4px 10px 20px; font-size: 15px; font-weight: 500; letter-spacing: -0.01em; }
-    .brand-mark { width: 22px; height: 22px; border-radius: 6px; background: var(--ink); color: var(--bg); display: grid; place-items: center; font-size: 11px; font-weight: 600; }
-    .nav { display: flex; flex-direction: column; gap: 2px; }
-    .nav a { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--radius-sm); color: var(--body); text-decoration: none; font-size: 13px; transition: background 0.14s ease, color 0.14s ease; }
-    .nav a:hover { background: var(--hairline-soft); color: var(--ink); }
-    .nav a.active { background: var(--sidebar-active); color: var(--ink); font-weight: 500; }
-    .nav-icon { width: 16px; height: 16px; opacity: 0.55; flex-shrink: 0; }
-    .nav a.active .nav-icon { opacity: 0.85; }
-    .sidebar-foot { margin-top: auto; padding: 12px 10px 0; font-size: 12px; color: var(--muted); line-height: 1.45; }
-    .main { flex: 1; min-width: 0; padding: 28px 32px 48px; }
-    .page-header { margin-bottom: 24px; }
-    .page-header h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
-    .page-header p { margin: 6px 0 0; font-size: 13px; color: var(--muted); }
-    .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
-    .stat-card { background: var(--surface); border: 1px solid var(--hairline); border-radius: var(--radius-lg); padding: 16px 18px; box-shadow: var(--shadow-card); }
-    .stat-label { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
-    .stat-value { font-size: 20px; font-weight: 600; letter-spacing: -0.02em; }
-    .banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; background: var(--success-bg); border: 1px solid rgba(31,138,101,0.18); border-radius: var(--radius-lg); padding: 12px 16px; margin-bottom: 16px; font-size: 13px; color: var(--success-ink); }
-    .banner-text { display: flex; align-items: center; gap: 8px; }
-    .banner-btn { background: rgba(31,138,101,0.12); border: 1px solid rgba(31,138,101,0.22); color: var(--success-ink); border-radius: var(--radius-sm); padding: 6px 12px; font-size: 12px; font-weight: 500; cursor: pointer; font-family: inherit; white-space: nowrap; }
-    .banner-btn:hover { background: rgba(31,138,101,0.18); }
-    .card { background: var(--surface); border: 1px solid var(--hairline); border-radius: var(--radius-lg); box-shadow: var(--shadow-card); overflow: hidden; }
-    .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--hairline-soft); }
-    .card-title { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
-    .table-wrap { overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th { text-align: left; padding: 10px 18px; font-size: 11px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--hairline-soft); }
-    th:last-child, td:last-child { text-align: right; }
-    td { padding: 14px 18px; border-bottom: 1px solid var(--hairline-soft); vertical-align: top; color: var(--body); }
-    tr:last-child td { border-bottom: none; }
-    tr:hover td { background: #fafaf7; }
-    tr.applied { opacity: 0.45; }
-    .fit-badge {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 26px;
-      height: 26px;
-      border-radius: var(--radius-sm);
-      flex-shrink: 0;
-    }
-    .fit-icon { width: 14px; height: 14px; display: block; }
-    .fit-yes { background: var(--success-bg); color: var(--success-ink); }
-    .fit-partial { background: var(--warning-bg); color: var(--warning); }
-    .company { font-weight: 500; color: var(--ink); }
-    .vacancy-link { color: var(--ink); text-decoration: none; }
-    .vacancy-link:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
-    .salary { color: var(--muted); font-variant-numeric: tabular-nums; }
-    details summary { cursor: pointer; color: var(--muted); font-size: 12px; font-weight: 500; list-style: none; user-select: none; }
-    details summary::-webkit-details-marker { display: none; }
-    details summary:hover { color: var(--ink); }
-    .letter { white-space: pre-wrap; background: var(--surface-muted); border: 1px solid var(--hairline); border-radius: var(--radius-md); padding: 12px 14px; margin-top: 8px; font-size: 12px; line-height: 1.6; color: var(--body); max-width: 520px; }
-    .btn-applied { background: var(--surface-muted); border: 1px solid var(--hairline); color: var(--ink); border-radius: var(--radius-sm); padding: 5px 10px; font-size: 12px; font-weight: 500; cursor: pointer; font-family: inherit; }
-    .btn-applied:hover { background: var(--hairline-soft); }
-    .done-mark {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 26px;
-      height: 26px;
-      color: var(--success-ink);
-      background: var(--success-bg);
-      border-radius: var(--radius-sm);
-    }
-    .done-mark svg { width: 14px; height: 14px; display: block; }
-    .empty { padding: 48px 24px; text-align: center; color: var(--muted); font-size: 14px; }
-    form { margin: 0; }
-    @media (max-width: 960px) {
-      .app { flex-direction: column; }
-      .sidebar { width: 100%; height: auto; position: static; border-right: none; border-bottom: 1px solid var(--hairline); padding: 12px; }
-      .nav { flex-direction: row; flex-wrap: wrap; }
-      .sidebar-foot { display: none; }
-      .main { padding: 20px 16px 32px; }
-      .stats { grid-template-columns: 1fr; }
-      .banner { flex-direction: column; align-items: flex-start; }
-    }
-    @media (max-width: 640px) { table { min-width: 640px; } }
+{% extends "base.html" %}
+{% block title %}FitLetter{% endblock %}
+{% block extra_css %}
+<style>
+  .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--hairline); border-radius: var(--radius-lg); padding: 16px 18px; }
+  .stat-label { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .stat-value { font-size: 20px; font-weight: 600; }
+  .banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; background: var(--success-bg); border: 1px solid rgba(31,138,101,0.18); border-radius: var(--radius-lg); padding: 12px 16px; margin-bottom: 16px; font-size: 13px; color: var(--success-ink); }
+  .banner-btn { background: rgba(31,138,101,0.12); border: 1px solid rgba(31,138,101,0.22); color: var(--success-ink); border-radius: var(--radius-sm); padding: 6px 12px; font-size: 12px; font-weight: 500; cursor: pointer; font-family: inherit; }
+  .fit-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; height: 26px; padding: 0 6px; border-radius: var(--radius-sm); font-size: 11px; font-weight: 600; }
+  .fit-yes { background: var(--success-bg); color: var(--success-ink); }
+  .fit-partial { background: var(--warning-bg); color: var(--warning); }
+  .company { font-weight: 500; color: var(--ink); }
+  .vacancy-link { color: var(--ink); text-decoration: none; }
+  .vacancy-link:hover { color: var(--accent); text-decoration: underline; }
+  .letter { white-space: pre-wrap; background: var(--surface-muted); border: 1px solid var(--hairline); border-radius: var(--radius-sm); padding: 12px; margin-top: 8px; font-size: 12px; max-width: 520px; }
+  .btn-applied { background: var(--surface-muted); border: 1px solid var(--hairline); border-radius: var(--radius-sm); padding: 5px 10px; font-size: 12px; cursor: pointer; font-family: inherit; }
+  tr.applied { opacity: 0.45; }
+  .empty { padding: 48px 24px; text-align: center; color: var(--muted); }
+  .table-wrap { overflow-x: auto; }
+  form { margin: 0; }
 </style>
-</head>
-<body>
-  <div class="app">
-    <aside class="sidebar">
-      <div class="brand">
-        <div class="brand-mark">FL</div>
-        FitLetter
+{% endblock %}
+{% block body %}
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand"><div class="brand-mark">FL</div> FitLetter</div>
+    <nav class="nav">
+      <a href="/?filter=pending{% if resume_id %}&resume_id={{ resume_id }}{% endif %}" class="{{ 'active' if filter == 'pending' else '' }}">К отклику</a>
+      <a href="/?filter=all{% if resume_id %}&resume_id={{ resume_id }}{% endif %}" class="{{ 'active' if filter == 'all' else '' }}">Все</a>
+      <a href="/resumes">Резюме</a>
+      {% if user.role == 'admin' %}<a href="/admin">Админ</a>{% endif %}
+      <form method="post" action="/logout"><button type="submit" class="linkish">Выйти</button></form>
+    </nav>
+    <div class="sidebar-foot">{{ user.display_name }}</div>
+  </aside>
+
+  <main class="main">
+    <header class="page-header">
+      <h1>{% if filter == 'all' %}Все вакансии{% else %}К отклику{% endif %}</h1>
+      <p>Подбор под выбранное резюме · сбор идёт для всех резюме автоматически</p>
+    </header>
+
+    {% if not resumes %}
+    <div class="alert alert-error">Сначала <a href="/resumes">загрузите резюме</a>, чтобы видеть вакансии.</div>
+    {% else %}
+
+    <form class="filters" method="get" action="/">
+      <input type="hidden" name="filter" value="{{ filter }}" />
+      <div class="field">
+        <label>Резюме</label>
+        <select name="resume_id" onchange="this.form.submit()">
+          {% for r in resumes %}
+          <option value="{{ r.id }}" {% if r.id == resume_id %}selected{% endif %}>{{ r.name }}</option>
+          {% endfor %}
+        </select>
       </div>
-      <nav class="nav">
-        <a href="/?filter=pending" class="{{ 'active' if filter == 'pending' else '' }}">
-          <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h12M2 8h8M2 12h10"/></svg>
-          К отклику
-        </a>
-        <a href="/?filter=new" class="{{ 'active' if filter == 'new' else '' }}">
-          <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 1.5"/></svg>
-          Новые сегодня
-        </a>
-        <a href="/?filter=all" class="{{ 'active' if filter == 'all' else '' }}">
-          <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M5 6h6M5 9h4"/></svg>
-          Все вакансии
-        </a>
-      </nav>
-      <div class="sidebar-foot">Владислав<br />delivery / PM · удалёнка</div>
-    </aside>
-
-    <main class="main">
-      <header class="page-header">
-        <h1>{% if filter == 'new' %}Новые сегодня{% elif filter == 'all' %}Все вакансии{% else %}К отклику{% endif %}</h1>
-        <p>delivery / PM · удалёнка · 180–250k net</p>
-      </header>
-
-      <div class="stats">
-        <div class="stat-card">
-          <div class="stat-label">В базе</div>
-          <div class="stat-value">{{ stats.total }}</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Откликнулся</div>
-          <div class="stat-value">{{ stats.applied }}</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Новых сегодня</div>
-          <div class="stat-value">{{ stats.new_today }}</div>
-        </div>
+      <div class="field">
+        <label>Подходимость от</label>
+        <select name="fit_min">
+          <option value="" {% if not fit_min %}selected{% endif %}>Любая</option>
+          <option value="90" {% if fit_min == '90' %}selected{% endif %}>90% — отлично</option>
+          <option value="65" {% if fit_min == '65' %}selected{% endif %}>65% — частично+</option>
+        </select>
       </div>
-
-      <div class="banner">
-        <div class="banner-text">
-          <span>&#8635;</span>
-          <span>Обнови базу с HeadHunter — подтянет свежие вакансии и сгенерирует письма</span>
-        </div>
-        <form method="post" action="/collect">
-          <button type="submit" class="banner-btn">Обновить с HH</button>
-        </form>
+      <div class="field">
+        <label>Дата добавления</label>
+        <select name="date_filter">
+          <option value="" {% if not date_filter %}selected{% endif %}>Все</option>
+          <option value="today" {% if date_filter == 'today' %}selected{% endif %}>Сегодня</option>
+          <option value="yesterday" {% if date_filter == 'yesterday' %}selected{% endif %}>Вчера</option>
+          <option value="week" {% if date_filter == 'week' %}selected{% endif %}>За неделю</option>
+        </select>
       </div>
+      <div class="field">
+        <label>Сортировка</label>
+        <select name="sort">
+          <option value="date_desc" {% if sort == 'date_desc' %}selected{% endif %}>Дата ↓</option>
+          <option value="date_asc" {% if sort == 'date_asc' %}selected{% endif %}>Дата ↑</option>
+          <option value="fit_desc" {% if sort == 'fit_desc' %}selected{% endif %}>Fit ↓</option>
+        </select>
+      </div>
+      <button class="btn btn-secondary" type="submit">Применить</button>
+    </form>
 
-      <section class="card">
-        <div class="card-head">
-          <div class="card-title">Вакансии</div>
-          <div class="card-actions">
-            <span style="font-size:12px;color:var(--muted)">{{ vacancies|length }} шт.</span>
-          </div>
-        </div>
+    <div class="stats">
+      <div class="stat-card"><div class="stat-label">В базе</div><div class="stat-value">{{ stats.total }}</div></div>
+      <div class="stat-card"><div class="stat-label">Откликнулся</div><div class="stat-value">{{ stats.applied }}</div></div>
+      <div class="stat-card"><div class="stat-label">Новых сегодня</div><div class="stat-value">{{ stats.new_today }}</div></div>
+    </div>
 
-        {% if vacancies %}
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Fit</th>
-                <th>Компания</th>
-                <th>Вакансия</th>
-                <th>ЗП</th>
-                <th>Письмо</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for v in vacancies %}
-              <tr class="{{ 'applied' if v.applied else '' }}">
-                <td>
-                  {% if v.fit == 'yes' %}
-                  <span class="fit-badge fit-yes" title="Подходит">
-                    <svg class="fit-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-6.5"/></svg>
-                  </span>
-                  {% else %}
-                  <span class="fit-badge fit-partial" title="Частично">
-                    <svg class="fit-icon" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="4"/></svg>
-                  </span>
-                  {% endif %}
-                </td>
-                <td><span class="company">{{ v.company }}</span></td>
-                <td><a class="vacancy-link" href="{{ v.url }}" target="_blank" rel="noopener">{{ v.title }}</a></td>
-                <td><span class="salary">{{ v.salary }}</span></td>
-                <td>
-                  <details>
-                    <summary>Показать письмо</summary>
-                    <div class="letter">{{ v.cover_letter }}</div>
-                  </details>
-                </td>
-                <td>
-                  {% if not v.applied %}
-                  <form method="post" action="/apply/{{ v.id }}">
-                    <button class="btn-applied" type="submit">Откликнулся</button>
-                  </form>
-                  {% else %}
-                  <span class="done-mark" title="Подходит">
-                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-6.5"/></svg>
-                  </span>
-                  {% endif %}
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-        {% else %}
-        <p class="empty">Пока пусто. Нажми «Обновить с HH».</p>
-        {% endif %}
-      </section>
-    </main>
-  </div>
-</body>
-</html>
+    <div class="banner">
+      <span>Обновить вручную с HeadHunter для текущего резюме</span>
+      <form method="post" action="/collect"><button type="submit" class="banner-btn">Обновить с HH</button></form>
+    </div>
+
+    <section class="card">
+      <div class="card-head">Вакансии · {{ vacancies|length }} шт.</div>
+      {% if vacancies %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Fit</th>
+              <th>Дата</th>
+              <th>Компания</th>
+              <th>Вакансия</th>
+              <th>ЗП</th>
+              <th>Письмо</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for v in vacancies %}
+            <tr class="{{ 'applied' if v.applied else '' }}">
+              <td>
+                <span class="fit-badge {{ 'fit-yes' if v.fit == 'yes' else 'fit-partial' }}" title="{{ v.fit }}">
+                  {{ v.fit_score }}%
+                </span>
+              </td>
+              <td style="white-space:nowrap;font-variant-numeric:tabular-nums">{{ fmt_date(v.first_seen) }}</td>
+              <td><span class="company">{{ v.company }}</span></td>
+              <td><a class="vacancy-link" href="{{ v.url }}" target="_blank" rel="noopener">{{ v.title }}</a></td>
+              <td style="color:var(--muted)">{{ v.salary }}</td>
+              <td>
+                <details><summary style="cursor:pointer;font-size:12px;color:var(--muted)">Показать</summary>
+                  <div class="letter">{{ v.cover_letter }}</div>
+                </details>
+              </td>
+              <td>
+                {% if not v.applied %}
+                <form method="post" action="/apply/{{ v.id }}"><button class="btn-applied" type="submit">Откликнулся</button></form>
+                {% else %}<span style="color:var(--success-ink)">✓</span>{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="empty">Нет вакансий по выбранным фильтрам. Сбор идёт ежедневно — или нажмите «Обновить с HH».</p>
+      {% endif %}
+    </section>
+    {% endif %}
+  </main>
+</div>
+{% endblock %}

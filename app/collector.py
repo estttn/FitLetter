@@ -7,9 +7,8 @@ import urllib.parse
 import urllib.request
 from urllib.error import HTTPError, URLError
 
-from app.db import init_db, upsert_vacancy
+from app.db import FIT_SCORE, init_db, list_active_users_with_resumes, load_resume_profile, upsert_vacancy
 from app.letters import generate_cover_letter
-from app.profile_loader import load_profile
 from app.scraper import parse_search_html, parse_vacancy_description
 from app.scorer import score_vacancy
 
@@ -55,9 +54,7 @@ def fetch_vacancy_description(url: str) -> str:
         return ""
 
 
-def collect_sync() -> dict:
-    init_db()
-    profile = load_profile()
+def collect_for_resume(user_id: int, resume_id: int, profile: dict) -> dict:
     seen_ids: set[str] = set()
     new_count = 0
     skipped_english = 0
@@ -65,19 +62,18 @@ def collect_sync() -> dict:
     pages_per_query = profile.get("pages_per_query", 2)
     delay = profile.get("request_delay_sec", 0.8)
     letter_delay = profile.get("letter_delay_sec", 0.5)
+    queries = profile.get("search_queries") or []
 
-    for query in profile["search_queries"]:
+    for query in queries:
         for page in range(pages_per_query):
             url = build_search_url(query, page=page, profile=profile)
             try:
                 html = fetch_page(url)
             except (HTTPError, URLError, TimeoutError) as e:
-                print(f"HH fetch error for {query!r} page {page}: {e}")
+                print(f"HH fetch error uid={user_id} rid={resume_id} {query!r} p{page}: {e}")
                 continue
             time.sleep(delay)
             items = parse_search_html(html)
-            if not items:
-                print(f"No vacancies parsed for {query!r} page {page}")
             for item in items:
                 if item.id in seen_ids:
                     continue
@@ -112,6 +108,7 @@ def collect_sync() -> dict:
                     continue
 
                 fit_label = "yes" if fit == "yes" else "partial"
+                fit_score = FIT_SCORE.get(fit_label, 65)
                 letter = generate_cover_letter(
                     title=item.title,
                     company=item.company,
@@ -122,12 +119,15 @@ def collect_sync() -> dict:
                 time.sleep(letter_delay)
                 if upsert_vacancy(
                     {
-                        "id": item.id,
+                        "hh_id": item.id,
+                        "user_id": user_id,
+                        "resume_id": resume_id,
                         "title": item.title,
                         "company": item.company,
                         "salary": item.salary,
                         "url": item.url,
                         "fit": fit_label,
+                        "fit_score": fit_score,
                         "reason": reason,
                         "cover_letter": letter,
                     }
@@ -135,6 +135,8 @@ def collect_sync() -> dict:
                     new_count += 1
 
     return {
+        "user_id": user_id,
+        "resume_id": resume_id,
         "scanned": scanned,
         "new": new_count,
         "unique": len(seen_ids),
@@ -142,12 +144,41 @@ def collect_sync() -> dict:
     }
 
 
-async def collect() -> dict:
-    return await asyncio.to_thread(collect_sync)
+def collect_all_sync() -> list[dict]:
+    init_db()
+    results: list[dict] = []
+    for user in list_active_users_with_resumes():
+        uid = user["id"]
+        for resume in user["resumes"]:
+            profile = load_resume_profile(resume)
+            if not profile.get("search_queries"):
+                print(f"Skip collect: no queries uid={uid} rid={resume['id']}")
+                continue
+            print(f"Collecting uid={uid} rid={resume['id']} resume={resume['name']!r}")
+            results.append(collect_for_resume(uid, resume["id"], profile))
+    return results
+
+
+def collect_sync_for_user(user_id: int, resume_id: int) -> dict:
+    init_db()
+    from app.db import get_resume
+
+    resume = get_resume(resume_id, user_id)
+    if not resume:
+        return {"error": "resume not found", "new": 0}
+    profile = load_resume_profile(resume)
+    return collect_for_resume(user_id, resume_id, profile)
+
+
+async def collect(user_id: int | None = None, resume_id: int | None = None) -> dict | list[dict]:
+    if user_id is not None and resume_id is not None:
+        return await asyncio.to_thread(collect_sync_for_user, user_id, resume_id)
+    return await asyncio.to_thread(collect_all_sync)
 
 
 def main() -> None:
-    print(collect_sync())
+    for r in collect_all_sync():
+        print(r)
 
 
 if __name__ == "__main__":

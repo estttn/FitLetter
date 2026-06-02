@@ -6,7 +6,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 
+def load_profile_from_dict(data: dict) -> dict:
+    return data
+
+
 def load_profile() -> dict:
+    """Legacy single-user profile.json on disk."""
     json_path = ROOT / "profile.json"
     if json_path.exists():
         with open(json_path, encoding="utf-8") as f:
