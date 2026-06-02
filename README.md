@@ -1,8 +1,8 @@
-# FitLetter
+# Бюро Скаут
 
-Подбор вакансий на HeadHunter под ваш профиль: fit-скоринг, персональные сопроводительные письма, трекер откликов.
+Сервис поиска на HeadHunter для своей команды: fit-скоринг, персонализированные сопроводительные письма, учёт откликов.
 
-**Roadmap (конкуренты ? фичи, 3 спринта):** [ROADMAP.md](ROADMAP.md)
+**Roadmap (конкуренты ? план, 3 спринта):** [ROADMAP.md](ROADMAP.md)
 
 ## Ветки
 
@@ -26,13 +26,13 @@ cp profile.example.json profile.json
 uvicorn app.main:app --host 0.0.0.0 --port 8090 --reload
 ```
 
-## Деплой (main) — SSH
+## Деплой (main) и SSH
 
-При push в `main` GitHub Actions копирует файлы на VPS по SCP и запускает `deploy.sh`.
+При push в `main` GitHub Actions копирует код на VPS и запускает `deploy.sh`.
 
-Подробно: [deploy-keys/README.md](deploy-keys/README.md)
+Подробнее: [deploy-keys/README.md](deploy-keys/README.md)
 
-### 1. Один раз на VPS
+### 1. Ключ для VPS
 
 ```bash
 cd /opt/hh-job-scout
@@ -48,18 +48,18 @@ Settings ? Secrets and variables ? Actions:
 |--------|----------|
 | `DEPLOY_HOST` | `89.108.98.245` |
 | `DEPLOY_USER` | `root` |
-| `DEPLOY_SSH_KEY` | приватный ключ из `deploy-keys/fitletter_github_actions` (локально, не в git) |
+| `DEPLOY_SSH_KEY` | приватный ключ из `deploy-keys/fitletter_github_actions` (файл не в git) |
 
-Опционально: webhook `/api/hooks/deploy` (см. `.env.example`) — для деплоя без SCP.
+Опционально: webhook `/api/hooks/deploy` (см. `.env.example`) вместо только SCP.
 
 ## Сбор вакансий
 
-Кнопка «Обновить с HH» сначала загружает вакансии, затем в фоне параллельно генерирует письма.
+Параллельная загрузка с HH — настройки в `.env` или в панели сбора.
 
 | Переменная | По умолчанию | Назначение |
 |------------|--------------|------------|
-| `COLLECT_DESC_WORKERS` | `8` | Потоки загрузки описаний с HH |
-| `COLLECT_LETTER_WORKERS` | `15` | Потоки запросов к DeepSeek |
+| `COLLECT_DESC_WORKERS` | `8` | Потоки описаний с HH |
+| `COLLECT_LETTER_WORKERS` | `15` | Потоки писем в DeepSeek |
 
 ## Структура
 
@@ -69,3 +69,5 @@ app/templates/ UI
 scripts/       утилиты (purge, regen, deploy)
 data/          SQLite (не в git)
 ```
+
+Репозиторий на GitHub: `estttn/job-scout` (внутреннее имя; бренд в продукте — **Бюро Скаут**).

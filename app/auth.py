@@ -6,7 +6,7 @@ from typing import Any
 
 import bcrypt
 
-ADMIN_USERNAME = os.environ.get("FITLETTER_ADMIN_USER", "Fitletter")
+ADMIN_USERNAME = os.environ.get("FITLETTER_ADMIN_USER", "admin")
 ADMIN_PASSWORD = os.environ.get("FITLETTER_ADMIN_PASSWORD", "23112311")
 
 

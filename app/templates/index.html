@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}FitLetter{% endblock %}
+{% block title %}Бюро Скаут{% endblock %}
 {% block extra_css %}
 <style>
   .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
@@ -153,7 +153,7 @@
 
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-mark">FL</div> FitLetter</div>
+    <div class="brand"><div class="brand-mark">БС</div> Бюро Скаут</div>
     <nav class="nav">
       <a href="/?filter=pending{% if resume_id %}&resume_id={{ resume_id }}{% endif %}" class="{{ 'active' if filter == 'pending' else '' }}">К отклику</a>
       <a href="/?filter=applied{% if resume_id %}&resume_id={{ resume_id }}{% endif %}" class="{{ 'active' if filter == 'applied' else '' }}">Отклики</a>
@@ -431,7 +431,7 @@
     lettersBox.innerHTML = '';
   }
 
-  var LETTER_RELOAD_KEY = 'fitletter_letters_reloaded';
+  var LETTER_RELOAD_KEY = 'buro_scout_letters_reloaded';
   var letterPollTimer = null;
 
   function pollLetterProgress() {

@@ -1,4 +1,4 @@
-# Deploy SSH key (FitLetter / job-scout)
+# Deploy SSH key (Бюро Скаут / job-scout)
 
 Ключ **только для GitHub Actions → VPS**. Не коммитьте приватный ключ.
 

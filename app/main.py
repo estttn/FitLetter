@@ -42,7 +42,7 @@ from app.deps import get_session_user, require_admin, require_login
 from app.letters import generate_cover_letter
 from app.resume_parser import SUPPORTED_SUFFIXES, extract_text
 
-app = FastAPI(title="FitLetter")
+app = FastAPI(title="Бюро Скаут")
 STATIC_DIR = Path(__file__).parent / "static"
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
