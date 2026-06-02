@@ -24,43 +24,31 @@ cp profile.example.json profile.json
 uvicorn app.main:app --host 0.0.0.0 --port 8090 --reload
 ```
 
-## Деплой (main) — без SSH-ключа в GitHub
+## Деплой (main) — SSH
 
-При push в `main` Actions вызывает **webhook** на уже работающем сервере. Сервер делает `git pull` и `systemctl restart`. SSH в Secrets не нужен.
+При push в `main` GitHub Actions копирует файлы на VPS по SCP и запускает `deploy.sh`.
+
+Подробно: [deploy-keys/README.md](deploy-keys/README.md)
 
 ### 1. Один раз на VPS
 
 ```bash
 cd /opt/hh-job-scout
-# если папка не git-репозиторий:
-bash scripts/setup_git_on_server.sh
-
-# в .env добавьте (сгенерируйте: openssl rand -hex 32):
-FITLETTER_DEPLOY_HOOK_TOKEN=ваш_длинный_секрет
-
-systemctl restart hh-job-scout
+git pull origin main   # или scp, если ещё не git
+bash scripts/install_deploy_pubkey.sh
 ```
-
-`data/`, `.env`, `profile.json` при `git reset` не трогаются (они в `.gitignore`).
 
 ### 2. Secrets в GitHub
 
 Settings ? Secrets and variables ? Actions:
 
-| Secret | Пример |
-|--------|--------|
-| `DEPLOY_HOOK_URL` | `http://89.108.98.245:8090/api/hooks/deploy` |
-| `DEPLOY_HOOK_TOKEN` | тот же токен, что в `.env` на сервере |
+| Secret | Значение |
+|--------|----------|
+| `DEPLOY_HOST` | `89.108.98.245` |
+| `DEPLOY_USER` | `root` |
+| `DEPLOY_SSH_KEY` | приватный ключ из `deploy-keys/fitletter_github_actions` (локально, не в git) |
 
-Старые `DEPLOY_HOST` / `DEPLOY_USER` / `DEPLOY_SSH_KEY` можно удалить.
-
-### 3. Проверка
-
-```bash
-curl -X POST -H "Authorization: Bearer ВАШ_ТОКЕН" http://89.108.98.245:8090/api/hooks/deploy
-# {"ok":true,"message":"deploy started"}
-tail -f /opt/hh-job-scout/data/deploy.log
-```
+Опционально: webhook `/api/hooks/deploy` (см. `.env.example`) — для деплоя без SCP.
 
 ## Сбор вакансий
 

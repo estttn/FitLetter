@@ -13,15 +13,28 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger deploy on server (webhook, no SSH)
-        env:
-          HOOK_URL: ${{ secrets.DEPLOY_HOOK_URL }}
-          HOOK_TOKEN: ${{ secrets.DEPLOY_HOOK_TOKEN }}
-        run: |
-          if [ -z "$HOOK_URL" ] || [ -z "$HOOK_TOKEN" ]; then
-            echo "::error::Add repository secrets DEPLOY_HOOK_URL and DEPLOY_HOOK_TOKEN (see README)."
-            exit 1
-          fi
-          curl -fsS -X POST \
-            -H "Authorization: Bearer $HOOK_TOKEN" \
-            "$HOOK_URL"
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Upload files (SCP)
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          source: "app,scripts,requirements.txt,run.sh,deploy.sh,profile.example.json,.env.example"
+          target: "/opt/hh-job-scout"
+          strip_components: 0
+          overwrite: true
+
+      - name: Install deps and restart
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/hh-job-scout
+            chmod +x deploy.sh run.sh scripts/*.sh 2>/dev/null || true
+            ./deploy.sh
