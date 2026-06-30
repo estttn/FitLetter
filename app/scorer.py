@@ -186,6 +186,42 @@ def _norm(s: str) -> str:
     return (s or "").lower().replace("\u0451", "e")
 
 
+def parse_salary_bounds(salary: str) -> tuple[int | None, int | None, bool]:
+    """Return (low, high, is_gross). high may be set for 'до X' ranges."""
+    sal = _norm(salary).replace("\u00a0", " ").replace("\u202f", " ")
+    gross = "gross" in sal or "до вычета" in sal or "брутто" in sal
+    m = re.search(r"до\s+(\d[\d\s]*)\s*(?:rur|rub|₽|руб)", sal)
+    if m:
+        return None, int(m.group(1).replace(" ", "")), gross
+    m = re.search(r"от\s+(\d[\d\s]*)\s*(?:rur|rub|₽|руб)", sal)
+    if m:
+        return int(m.group(1).replace(" ", "")), None, gross
+    m = re.search(r"(\d[\d\s]*)\s*[-–—]\s*(\d[\d\s]*)\s*(?:rur|rub|₽|руб)", sal)
+    if m:
+        return int(m.group(1).replace(" ", "")), int(m.group(2).replace(" ", "")), gross
+    m = re.search(r"(\d[\d\s]*)\s*(?:rur|rub|₽|руб)", sal)
+    if m:
+        val = int(m.group(1).replace(" ", ""))
+        return val, val, gross
+    return None, None, gross
+
+
+def _salary_too_low(salary: str, profile: dict) -> str | None:
+    minimum = int(profile.get("salary_min_net") or 0)
+    if minimum <= 0:
+        return None
+    low, high, gross = parse_salary_bounds(salary)
+    if low is None and high is None:
+        return None
+    threshold = minimum
+    if gross:
+        threshold = int(minimum / 0.87)
+    effective = high if high is not None else low
+    if effective is not None and effective < threshold:
+        return f"salary below {minimum} net (max {effective})"
+    return None
+
+
 def _padded(s: str) -> str:
     return f" {s} "
 
@@ -229,7 +265,6 @@ def score_vacancy(
 ) -> tuple[str, str]:
     t = _norm(title)
     t_pad = _padded(t)
-    sal = _norm(salary)
 
     for kw in profile.get("exclude_title_keywords", []):
         if _norm(kw) in t:
@@ -257,11 +292,9 @@ def score_vacancy(
     if _LEADER_WORD in t and not _has_it_context(title):
         return "no", "leader without IT/project context"
 
-    m = re.search(r"(\d[\d\s]*)\s*-?\s*(\d[\d\s]*)?\s*rur\s*\(gross\)", sal)
-    if m:
-        low = int(m.group(1).replace(" ", ""))
-        if low < 200000:
-            return "no", "salary gross below threshold"
+    salary_reason = _salary_too_low(salary, profile)
+    if salary_reason:
+        return "no", salary_reason
 
     strong = [
         "delivery",

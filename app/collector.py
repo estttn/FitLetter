@@ -28,7 +28,7 @@ from app.db import (
     upsert_vacancy,
 )
 from app.letters import generate_cover_letter
-from app.scraper import VacancyItem, parse_search_html, parse_vacancy_description
+from app.scraper import VacancyItem, parse_search_html, parse_vacancy_description, parse_vacancy_page
 from app.scorer import score_vacancy
 
 HH_SEARCH = "https://hh.ru/search/vacancy"
@@ -70,10 +70,20 @@ def fetch_page(url: str) -> str:
 def fetch_vacancy_description(url: str) -> str:
     try:
         html = fetch_page(url)
-        return parse_vacancy_description(html)
+        desc, _salary = parse_vacancy_page(html)
+        return desc
     except (HTTPError, URLError, TimeoutError) as e:
         print(f"Description fetch failed {url}: {e}")
         return ""
+
+
+def fetch_vacancy_details(url: str) -> tuple[str, str]:
+    try:
+        html = fetch_page(url)
+        return parse_vacancy_page(html)
+    except (HTTPError, URLError, TimeoutError) as e:
+        print(f"Vacancy fetch failed {url}: {e}")
+        return "", "—"
 
 
 def _profile_for_collect(user_id: int, resume_id: int, profile: dict) -> dict:
@@ -87,20 +97,19 @@ def _profile_for_collect(user_id: int, resume_id: int, profile: dict) -> dict:
     )
 
 
-def _fetch_descriptions_parallel(items: list[VacancyItem]) -> dict[str, str]:
+def _fetch_vacancy_details_parallel(items: list[VacancyItem]) -> dict[str, tuple[str, str]]:
     if not items:
         return {}
-    by_id = {it.id: it for it in items}
-    out: dict[str, str] = {}
+    out: dict[str, tuple[str, str]] = {}
     with ThreadPoolExecutor(max_workers=DESC_WORKERS) as pool:
-        futures = {pool.submit(fetch_vacancy_description, it.url): it.id for it in items}
+        futures = {pool.submit(fetch_vacancy_details, it.url): it.id for it in items}
         for fut in as_completed(futures):
             vid = futures[fut]
             try:
                 out[vid] = fut.result()
             except Exception as e:
-                print(f"Description worker failed {vid}: {e}")
-                out[vid] = ""
+                print(f"Vacancy worker failed {vid}: {e}")
+                out[vid] = ("", "—")
     return out
 
 
@@ -146,14 +155,15 @@ def scrape_for_resume(user_id: int, resume_id: int, profile: dict) -> dict:
                 need_description[item.id] = item
 
     desc_items = list(need_description.values())
-    descriptions = _fetch_descriptions_parallel(desc_items)
+    details = _fetch_vacancy_details_parallel(desc_items)
 
     for item in desc_items:
-        description = descriptions.get(item.id, "")
+        description, page_salary = details.get(item.id, ("", "—"))
+        salary = page_salary if page_salary != "—" else item.salary
         fit, reason = score_vacancy(
             title=item.title,
             company=item.company,
-            salary=item.salary,
+            salary=salary,
             description=description,
             profile=profile,
         )
@@ -171,7 +181,7 @@ def scrape_for_resume(user_id: int, resume_id: int, profile: dict) -> dict:
                 "resume_id": resume_id,
                 "title": item.title,
                 "company": item.company,
-                "salary": item.salary,
+                "salary": salary,
                 "url": item.url,
                 "fit": fit_label,
                 "fit_score": fit_score,

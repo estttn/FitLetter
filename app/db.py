@@ -117,6 +117,8 @@ def _migrate_vacancy_columns(conn: sqlite3.Connection) -> None:
         )
     if "rejected_at" not in cols:
         conn.execute("ALTER TABLE vacancies ADD COLUMN rejected_at TEXT")
+    if "reject_reason" not in cols:
+        conn.execute("ALTER TABLE vacancies ADD COLUMN reject_reason TEXT")
 
 
 def _create_vacancies_table(conn: sqlite3.Connection) -> None:
@@ -143,6 +145,7 @@ def _create_vacancies_table(conn: sqlite3.Connection) -> None:
             response_at TEXT,
             user_rejected INTEGER NOT NULL DEFAULT 0,
             rejected_at TEXT,
+            reject_reason TEXT,
             applied INTEGER NOT NULL DEFAULT 0,
             first_seen TEXT NOT NULL,
             last_seen TEXT NOT NULL,
@@ -524,6 +527,9 @@ def upsert_vacancy(row: dict) -> bool:
             (row["hh_id"], row["user_id"], row["resume_id"]),
         )
         exists = cur.fetchone()
+        incoming_salary = row.get("salary")
+        if not incoming_salary or incoming_salary == "—":
+            incoming_salary = None
         if exists:
             existing_letter = (exists["cover_letter"] or "").strip()
             incoming_letter = (row.get("cover_letter") or "").strip()
@@ -555,7 +561,7 @@ def upsert_vacancy(row: dict) -> bool:
                 """,
                 (
                     now,
-                    row.get("salary"),
+                    incoming_salary,
                     fit,
                     fit_score,
                     row.get("reason"),
@@ -690,6 +696,7 @@ def list_vacancies(
     *,
     hide_applied: bool = False,
     hide_rejected: bool = False,
+    only_rejected: bool = False,
     only_applied: bool = False,
     fit_min: int | None = None,
     date_filter: str | None = None,
@@ -700,15 +707,17 @@ def list_vacancies(
 
     if only_applied:
         clauses.append("applied = 1")
+    elif only_rejected:
+        clauses.append("user_rejected = 1")
     elif hide_applied:
         clauses.append("applied = 0")
-    if hide_rejected:
+    if hide_rejected and not only_rejected:
         clauses.append("user_rejected = 0")
     if fit_min is not None:
         clauses.append("fit_score >= ?")
         params.append(fit_min)
 
-    date_col = "applied_at" if only_applied else "first_seen"
+    date_col = "applied_at" if only_applied else ("rejected_at" if only_rejected else "first_seen")
     if date_filter == "today":
         clauses.append(f"date({date_col}) = date('now', 'localtime')")
     elif date_filter == "yesterday":
@@ -719,6 +728,8 @@ def list_vacancies(
     where = "WHERE " + " AND ".join(clauses)
     if only_applied:
         default_order = "applied_at DESC"
+    elif only_rejected:
+        default_order = "rejected_at DESC"
     else:
         default_order = "first_seen DESC"
     order = {
@@ -735,16 +746,19 @@ def list_vacancies(
     return [dict(r) for r in rows]
 
 
-def mark_rejected(vacancy_id: int, user_id: int) -> bool:
+def mark_rejected(vacancy_id: int, user_id: int, *, reason: str = "") -> bool:
     now = _now()
+    note = (reason or "").strip()[:2000]
     with connect() as conn:
         cur = conn.execute(
             """
             UPDATE vacancies
-            SET user_rejected = 1, rejected_at = COALESCE(rejected_at, ?)
+            SET user_rejected = 1,
+                rejected_at = ?,
+                reject_reason = ?
             WHERE id = ? AND user_id = ? AND applied = 0
             """,
-            (now, vacancy_id, user_id),
+            (now, note or None, vacancy_id, user_id),
         )
         conn.commit()
         return cur.rowcount > 0

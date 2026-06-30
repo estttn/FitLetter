@@ -174,6 +174,26 @@
   }
   .resp-invited { background: var(--success-bg); color: var(--success-ink); }
   .resp-rejected { background: var(--danger-bg); color: var(--danger); }
+  .reject-reason {
+    font-size: 12px; line-height: 1.5; color: var(--body); max-width: 280px;
+    white-space: pre-wrap;
+  }
+  .reject-reason-empty { color: var(--muted); font-style: italic; }
+  .salary-cell { font-size: 12px; white-space: nowrap; }
+  .salary-cell--empty { color: var(--muted); }
+  .reject-dialog {
+    border: none; border-radius: var(--radius-lg); padding: 0; max-width: 440px; width: calc(100% - 32px);
+    box-shadow: 0 12px 40px rgba(38,37,30,0.15);
+  }
+  .reject-dialog::backdrop { background: rgba(38,37,30,0.35); }
+  .reject-dialog-inner { padding: 22px 24px; }
+  .reject-dialog h3 { margin: 0 0 8px; font-size: 16px; }
+  .reject-dialog .vacancy-preview { font-size: 13px; color: var(--muted); margin-bottom: 14px; line-height: 1.45; }
+  .reject-dialog textarea {
+    width: 100%; min-height: 96px; padding: 10px 12px; border: 1px solid var(--hairline);
+    border-radius: var(--radius-sm); font-family: inherit; font-size: 13px; resize: vertical;
+  }
+  .reject-dialog-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
   .empty { padding: 48px 24px; text-align: center; color: var(--muted); }
   .table-wrap { overflow-x: auto; }
   form { margin: 0; }
@@ -194,6 +214,7 @@
     <nav class="nav">
       <a href="/?filter=pending{% if resume_id %}&resume_id={{ resume_id }}{% endif %}" class="{{ 'active' if filter == 'pending' else '' }}">К отклику</a>
       <a href="/?filter=applied{% if resume_id %}&resume_id={{ resume_id }}{% endif %}" class="{{ 'active' if filter == 'applied' else '' }}">Отклики</a>
+      <a href="/?filter=rejected{% if resume_id %}&resume_id={{ resume_id }}{% endif %}" class="{{ 'active' if filter == 'rejected' else '' }}">Отклонённые</a>
       <a href="/resumes">Резюме</a>
       {% if user.role == 'admin' %}<a href="/admin">Админ</a>{% endif %}
       <div class="nav-sep"></div>
@@ -204,8 +225,8 @@
 
   <main class="main">
     <header class="page-header">
-      <h1>{% if filter == 'applied' %}Отклики{% else %}К отклику{% endif %}</h1>
-      <p>{% if filter == 'applied' %}История откликов с датой и текстом письма{% else %}Подбор под выбранное резюме · сбор для всех резюме ежедневно{% endif %}</p>
+      <h1>{% if filter == 'applied' %}Отклики{% elif filter == 'rejected' %}Отклонённые{% else %}К отклику{% endif %}</h1>
+      <p>{% if filter == 'applied' %}История откликов с датой и текстом письма{% elif filter == 'rejected' %}Вакансии, которые вы отбраковали — для анализа и улучшения фильтров{% else %}Подбор под выбранное резюме · сбор для всех резюме ежедневно{% endif %}</p>
     </header>
 
     {% if not resumes %}
@@ -222,7 +243,7 @@
           {% endfor %}
         </select>
       </div>
-      {% if filter != 'applied' %}
+      {% if filter == 'pending' %}
       <div class="field">
         <label>Подходимость от</label>
         <select name="fit_min">
@@ -233,7 +254,7 @@
       </div>
       {% endif %}
       <div class="field">
-        <label>{% if filter == 'applied' %}Дата отклика{% else %}Дата добавления{% endif %}</label>
+        <label>{% if filter == 'applied' %}Дата отклика{% elif filter == 'rejected' %}Дата отклонения{% else %}Дата добавления{% endif %}</label>
         <select name="date_filter">
           <option value="" {% if not date_filter %}selected{% endif %}>Все</option>
           <option value="today" {% if date_filter == 'today' %}selected{% endif %}>Сегодня</option>
@@ -242,6 +263,14 @@
         </select>
       </div>
       {% if filter == 'applied' %}
+      <div class="field">
+        <label>Сортировка</label>
+        <select name="sort">
+          <option value="date_desc" {% if sort == 'date_desc' %}selected{% endif %}>Дата ↓</option>
+          <option value="date_asc" {% if sort == 'date_asc' %}selected{% endif %}>Дата ↑</option>
+        </select>
+      </div>
+      {% elif filter == 'rejected' %}
       <div class="field">
         <label>Сортировка</label>
         <select name="sort">
@@ -258,7 +287,7 @@
       <button class="btn btn-secondary" type="submit">Применить</button>
     </form>
 
-    {% if filter != 'applied' %}
+    {% if filter == 'pending' %}
     <div class="stats">
       <div class="stat-card"><div class="stat-label">В базе</div><div class="stat-value">{{ stats.total }}</div></div>
       <div class="stat-card"><div class="stat-label">Откликнулся</div><div class="stat-value">{{ stats.applied }}</div></div>
@@ -288,7 +317,7 @@
 
     <section class="card">
       <div class="card-head">
-        {% if filter == 'applied' %}Отклики · {{ vacancies|length }}{% else %}Вакансии · {{ vacancies|length }}{% endif %}
+        {% if filter == 'applied' %}Отклики · {{ vacancies|length }}{% elif filter == 'rejected' %}Отклонённые · {{ vacancies|length }}{% else %}Вакансии · {{ vacancies|length }}{% endif %}
       </div>
       {% if vacancies %}
       <div class="table-wrap">
@@ -296,12 +325,13 @@
           <thead>
             <tr>
               {% if filter != 'applied' %}<th>Fit</th>{% endif %}
-              <th>{% if filter == 'applied' %}Отклик / результат{% else %}Добавлено{% endif %}</th>
+              <th>{% if filter == 'applied' %}Отклик{% elif filter == 'rejected' %}Отклонено{% else %}Добавлено{% endif %}</th>
               <th>Компания</th>
               <th>Вакансия</th>
               <th>ЗП</th>
+              {% if filter == 'rejected' %}<th>Причина</th>{% endif %}
               <th>Письмо</th>
-              {% if filter == 'applied' %}<th>Статус</th>{% else %}<th aria-label="Действия"></th>{% endif %}
+              {% if filter == 'applied' %}<th>Статус</th>{% elif filter == 'pending' %}<th aria-label="Действия"></th>{% endif %}
             </tr>
           </thead>
           <tbody>
@@ -313,11 +343,22 @@
               </td>
               {% endif %}
               <td class="applied-date">
-                {% if filter == 'applied' and v.applied_at %}{{ fmt_date(v.applied_at) }}{% else %}{{ fmt_date(v.first_seen) }}{% endif %}
+                {% if filter == 'applied' and v.applied_at %}{{ fmt_date(v.applied_at) }}
+                {% elif filter == 'rejected' and v.rejected_at %}{{ fmt_date(v.rejected_at) }}
+                {% else %}{{ fmt_date(v.first_seen) }}{% endif %}
               </td>
               <td><span class="company">{{ v.company }}</span></td>
               <td><a class="vacancy-link" href="{{ v.url }}" target="_blank" rel="noopener">{{ v.title }}</a></td>
-              <td style="color:var(--muted)">{{ v.salary }}</td>
+              <td class="salary-cell {{ 'salary-cell--empty' if not v.salary or v.salary == '—' else '' }}">{{ v.salary or '—' }}</td>
+              {% if filter == 'rejected' %}
+              <td>
+                {% if v.reject_reason %}
+                <div class="reject-reason">{{ v.reject_reason }}</div>
+                {% else %}
+                <span class="reject-reason reject-reason-empty">Без комментария</span>
+                {% endif %}
+              </td>
+              {% endif %}
               <td class="td-letter">
                 <div class="letter-cell">
                   {% if v.cover_letter %}
@@ -361,13 +402,10 @@
                   </details>
                 </div>
               </td>
-              {% if filter != 'applied' %}
+              {% if filter == 'pending' %}
               <td>
                 <div class="row-actions">
-                  <form method="post" action="/reject/{{ v.id }}">
-                    <input type="hidden" name="resume_id" value="{{ resume_id }}" />
-                    <button class="btn-icon btn-icon--reject" type="submit" title="Отклонить" aria-label="Отклонить">✕</button>
-                  </form>
+                  <button type="button" class="btn-icon btn-icon--reject btn-open-reject" data-vacancy-id="{{ v.id }}" data-vacancy-title="{{ v.title }}" title="Отклонить" aria-label="Отклонить">✕</button>
                   <form method="post" action="/apply/{{ v.id }}">
                     <input type="hidden" name="resume_id" value="{{ resume_id }}" />
                     <button class="btn-icon btn-icon--apply" type="submit" title="Откликнулся" aria-label="Откликнулся">✓</button>
@@ -406,13 +444,29 @@
       </div>
       {% else %}
       <p class="empty">
-        {% if filter == 'applied' %}Пока нет откликов по этому резюме.{% else %}Нет вакансий по фильтрам — нажмите «Обновить с HH» или дождитесь ежедневного сбора.{% endif %}
+        {% if filter == 'applied' %}Пока нет откликов по этому резюме.
+        {% elif filter == 'rejected' %}Пока нет отклонённых вакансий — нажмите ✕ в списке «К отклику».
+        {% else %}Нет вакансий по фильтрам — нажмите «Обновить с HH» или дождитесь ежедневного сбора.{% endif %}
       </p>
       {% endif %}
     </section>
     {% endif %}
   </main>
 </div>
+
+<dialog id="reject-dialog" class="reject-dialog">
+  <form method="post" id="reject-form" class="reject-dialog-inner">
+    <h3>Отклонить вакансию</h3>
+    <div class="vacancy-preview" id="reject-vacancy-title"></div>
+    <label for="reject-reason-input" style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px">Почему не подходит?</label>
+    <textarea id="reject-reason-input" name="reject_reason" placeholder="Например: низкая ЗП до 120к, английский, не мой профиль…"></textarea>
+    <input type="hidden" name="resume_id" id="reject-resume-id" value="{{ resume_id or '' }}" />
+    <div class="reject-dialog-actions">
+      <button type="button" class="btn btn-secondary" id="reject-cancel">Отмена</button>
+      <button type="submit" class="btn btn-danger">Отклонить</button>
+    </div>
+  </form>
+</dialog>
 
 <script>
 (function () {
@@ -461,6 +515,28 @@
       });
     });
   });
+
+  var rejectDialog = document.getElementById('reject-dialog');
+  var rejectForm = document.getElementById('reject-form');
+  var rejectTitle = document.getElementById('reject-vacancy-title');
+  var rejectReason = document.getElementById('reject-reason-input');
+  var rejectCancel = document.getElementById('reject-cancel');
+
+  document.querySelectorAll('.btn-open-reject').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      if (!rejectDialog || !rejectForm) return;
+      var vid = btn.dataset.vacancyId;
+      rejectForm.action = '/reject/' + vid;
+      if (rejectTitle) rejectTitle.textContent = btn.dataset.vacancyTitle || '';
+      if (rejectReason) rejectReason.value = '';
+      rejectDialog.showModal();
+      if (rejectReason) rejectReason.focus();
+    });
+  });
+
+  if (rejectCancel && rejectDialog) {
+    rejectCancel.addEventListener('click', function () { rejectDialog.close(); });
+  }
 
   var collectBtn = document.getElementById('collect-btn');
   var loader = document.getElementById('collect-loader');

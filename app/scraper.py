@@ -97,25 +97,103 @@ def _vacancy_url(v: dict[str, Any], host: str, vid: str) -> str:
     return f"https://{host}/vacancy/{vid}"
 
 
+def _money_int(val: Any) -> int | None:
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        return int(val)
+    s = re.sub(r"[^\d]", "", str(val))
+    return int(s) if s else None
+
+
+def _format_money_block(block: dict[str, Any]) -> str:
+    fr = _money_int(block.get("from") or block.get("@from"))
+    to = _money_int(block.get("to") or block.get("@to"))
+    cur = block.get("currencyCode") or block.get("currency") or "RUR"
+    gross = block.get("gross") if "gross" in block else block.get("@gross")
+    net_label = "gross" if gross else "net"
+    if fr and to:
+        return f"{fr}–{to} {cur} ({net_label})"
+    if fr:
+        return f"от {fr} {cur} ({net_label})"
+    if to:
+        return f"до {to} {cur} ({net_label})"
+    return ""
+
+
 def format_compensation(comp: dict[str, Any]) -> str:
     if not comp or comp.get("noCompensation"):
         return "—"
-    for key in ("fromTo", "onlyFrom", "onlyTo", "perModeFromTo"):
+    for key in (
+        "fromTo",
+        "onlyFrom",
+        "onlyTo",
+        "perModeFromTo",
+        "range",
+        "monthly",
+        "month",
+    ):
         block = comp.get(key)
-        if not isinstance(block, dict):
-            continue
-        fr = block.get("from") or block.get("@from")
-        to = block.get("to") or block.get("@to")
-        cur = block.get("currencyCode") or block.get("currency") or "RUR"
-        gross = block.get("gross") if "gross" in block else block.get("@gross")
-        net_label = "gross" if gross else "net"
-        if fr and to:
-            return f"{fr}–{to} {cur} ({net_label})"
-        if fr:
-            return f"от {fr} {cur} ({net_label})"
-        if to:
-            return f"до {to} {cur} ({net_label})"
+        if isinstance(block, dict):
+            text = _format_money_block(block)
+            if text:
+                return text
+    # HH sometimes nests compensation under mode / value
+    for block in comp.values():
+        if isinstance(block, dict):
+            text = _format_money_block(block)
+            if text:
+                return text
     return "—"
+
+
+_SALARY_TO_RE = re.compile(
+    r"до\s+(\d[\d\s\u00a0\u202f]*)\s*(?:₽|руб\.?|rur|rub)",
+    re.I,
+)
+_SALARY_RANGE_RE = re.compile(
+    r"(\d[\d\s\u00a0\u202f]*)\s*[–\-—]\s*(\d[\d\s\u00a0\u202f]*)\s*(?:₽|руб\.?|rur|rub)",
+    re.I,
+)
+_SALARY_FROM_RE = re.compile(
+    r"от\s+(\d[\d\s\u00a0\u202f]*)\s*(?:₽|руб\.?|rur|rub)",
+    re.I,
+)
+
+
+def salary_from_html_text(html: str) -> str:
+    text = strip_html(html)
+    m = _SALARY_TO_RE.search(text)
+    if m:
+        val = _money_int(m.group(1))
+        if val:
+            return f"до {val} RUR (gross)"
+    m = _SALARY_RANGE_RE.search(text)
+    if m:
+        lo, hi = _money_int(m.group(1)), _money_int(m.group(2))
+        if lo and hi:
+            return f"{lo}–{hi} RUR (gross)"
+    m = _SALARY_FROM_RE.search(text)
+    if m:
+        val = _money_int(m.group(1))
+        if val:
+            return f"от {val} RUR (gross)"
+    return "—"
+
+
+def parse_vacancy_page(html: str) -> tuple[str, str]:
+    """Return (description, salary) from a vacancy page."""
+    data = parse_initial_state(html)
+    description = parse_vacancy_description(html)
+    salary = "—"
+    if data:
+        vv = data.get("vacancyView") or {}
+        comp = vv.get("compensation") or vv.get("salary")
+        if isinstance(comp, dict):
+            salary = format_compensation(comp)
+    if salary == "—":
+        salary = salary_from_html_text(html)
+    return description, salary
 
 
 def _parse_fallback_links(html: str) -> list[VacancyItem]:

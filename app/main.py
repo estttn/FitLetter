@@ -373,13 +373,15 @@ async def index(
     if rid is not None:
         fit_val = int(fit_min) if fit_min.isdigit() else None
         only_applied = filter == "applied"
-        if not only_applied:
+        only_rejected = filter == "rejected"
+        if not only_applied and not only_rejected:
             sort = "fit_desc"
         vacancies = list_vacancies(
             user["id"],
             rid,
-            hide_applied=not only_applied,
-            hide_rejected=not only_applied,
+            hide_applied=not only_applied and not only_rejected,
+            hide_rejected=not only_rejected,
+            only_rejected=only_rejected,
             only_applied=only_applied,
             fit_min=fit_val,
             date_filter=date_filter or None,
@@ -428,11 +430,12 @@ async def reject_vacancy(
     request: Request,
     vacancy_id: int,
     resume_id: int | None = Form(None),
+    reject_reason: str = Form(""),
 ):
     user = require_login(request)
     if redir := _redirect_if_needed(user):
         return redir
-    mark_rejected(vacancy_id, user["id"])
+    mark_rejected(vacancy_id, user["id"], reason=reject_reason)
     q = _resume_query(request, resume_id)
     return RedirectResponse(f"/?filter=pending{q}", status_code=303)
 
