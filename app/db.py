@@ -812,3 +812,42 @@ def get_vacancy_for_user(vacancy_id: int, user_id: int) -> dict | None:
             (vacancy_id, user_id),
         ).fetchone()
     return dict(row) if row else None
+
+
+def vacancy_data_stats() -> dict[str, int]:
+    with connect() as conn:
+        if not conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='vacancies'"
+        ).fetchone():
+            return {"total": 0, "applied": 0, "rejected": 0, "pending": 0}
+        total = conn.execute("SELECT COUNT(*) FROM vacancies").fetchone()[0]
+        applied = conn.execute(
+            "SELECT COUNT(*) FROM vacancies WHERE applied = 1"
+        ).fetchone()[0]
+        rejected = conn.execute(
+            "SELECT COUNT(*) FROM vacancies WHERE user_rejected = 1"
+        ).fetchone()[0]
+        pending = conn.execute(
+            """
+            SELECT COUNT(*) FROM vacancies
+            WHERE applied = 0 AND user_rejected = 0
+            """
+        ).fetchone()[0]
+    return {
+        "total": total,
+        "applied": applied,
+        "rejected": rejected,
+        "pending": pending,
+    }
+
+
+def clear_all_vacancies() -> int:
+    with connect() as conn:
+        count = conn.execute("SELECT COUNT(*) FROM vacancies").fetchone()[0]
+        conn.execute("DELETE FROM vacancies")
+        if conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='vacancies_legacy'"
+        ).fetchone():
+            conn.execute("DELETE FROM vacancies_legacy")
+        conn.commit()
+    return count

@@ -33,6 +33,8 @@ from app.db import (
     list_vacancies,
     mark_applied,
     mark_rejected,
+    clear_all_vacancies,
+    vacancy_data_stats,
     set_vacancy_response,
     set_user_status,
     stats,
@@ -207,7 +209,35 @@ async def admin_page(request: Request, tab: str = "pending"):
             "tab": tab,
             "pending": list_pending_users(),
             "users": list_all_users(),
+            "vacancy_stats": vacancy_data_stats(),
         },
+    )
+
+
+@app.get("/api/admin/vacancy-stats")
+async def api_admin_vacancy_stats(request: Request):
+    user = require_admin(request)
+    if redir := _redirect_if_needed(user):
+        return JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
+    stats = vacancy_data_stats()
+    stats["ok"] = True
+    return JSONResponse(stats)
+
+
+@app.post("/api/admin/clear-vacancies")
+async def api_admin_clear_vacancies(request: Request):
+    user = require_admin(request)
+    if redir := _redirect_if_needed(user):
+        return JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
+    t0 = time.perf_counter()
+    deleted = clear_all_vacancies()
+    return JSONResponse(
+        {
+            "ok": True,
+            "deleted": deleted,
+            "elapsed_sec": round(time.perf_counter() - t0, 2),
+            "stats": vacancy_data_stats(),
+        }
     )
 
 

@@ -1,6 +1,49 @@
 {% extends "base.html" %}
 {% block title %}Админ — Бюро Скаут{% endblock %}
+{% block extra_css %}
+<style>
+  .data-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .data-stat { background: var(--surface-muted); border: 1px solid var(--hairline); border-radius: var(--radius-lg); padding: 14px 16px; }
+  .data-stat-label { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .data-stat-value { font-size: 22px; font-weight: 600; color: var(--ink); }
+  .data-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .data-note { margin-top: 16px; font-size: 13px; color: var(--muted); line-height: 1.55; max-width: 560px; }
+  .data-result {
+    margin-top: 16px; padding: 12px 16px; border-radius: var(--radius-lg);
+    font-size: 13px; line-height: 1.55;
+  }
+  .data-result.ok { background: var(--success-bg); color: var(--success-ink); border: 1px solid rgba(31,138,101,0.2); }
+  .data-result.err { background: var(--danger-bg); color: var(--danger); border: 1px solid rgba(180,35,24,0.15); }
+  .admin-loader {
+    display: none; position: fixed; inset: 0; background: rgba(247,247,244,0.72);
+    z-index: 100; align-items: center; justify-content: center;
+  }
+  .admin-loader.active { display: flex; }
+  .admin-loader-box {
+    background: var(--surface); border: 1px solid var(--hairline); border-radius: var(--radius-lg);
+    padding: 28px 32px; text-align: center; box-shadow: 0 8px 32px rgba(38,37,30,0.08);
+    min-width: 300px;
+  }
+  .admin-spinner {
+    width: 32px; height: 32px; margin: 0 auto 16px;
+    border: 2px solid var(--hairline); border-top-color: var(--ink);
+    border-radius: 50%; animation: admin-spin 0.8s linear infinite;
+  }
+  @keyframes admin-spin { to { transform: rotate(360deg); } }
+  @media (max-width: 720px) {
+    .data-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+</style>
+{% endblock %}
 {% block body %}
+<div id="admin-loader" class="admin-loader" aria-live="polite">
+  <div class="admin-loader-box">
+    <div class="admin-spinner"></div>
+    <div id="admin-loader-title" style="font-weight:600;margin-bottom:6px">Очищаем базу</div>
+    <div id="admin-loader-hint" style="font-size:13px;color:var(--muted)">Удаляем вакансии и отклики…</div>
+  </div>
+</div>
+
 <div class="app">
   <aside class="sidebar">
     <div class="brand"><div class="brand-mark">БС</div> Бюро Скаут</div>
@@ -17,14 +60,51 @@
   <main class="main">
     <header class="page-header">
       <h1>Администрирование</h1>
-      <p>Заявки на регистрацию и управление пользователями</p>
+      <p>Заявки, пользователи и управление данными</p>
     </header>
     <div class="tabs">
       <a href="/admin?tab=pending" class="{{ 'active' if tab == 'pending' else '' }}">Заявки ({{ pending|length }})</a>
       <a href="/admin?tab=users" class="{{ 'active' if tab == 'users' else '' }}">Пользователи</a>
+      <a href="/admin?tab=data" class="{{ 'active' if tab == 'data' else '' }}">Данные</a>
     </div>
 
-    {% if tab == 'pending' %}
+    {% if tab == 'data' %}
+    <section class="card">
+      <div class="card-head">Вакансии и отклики</div>
+      <div class="card-body">
+        <div class="data-stats" id="vacancy-stats">
+          <div class="data-stat">
+            <div class="data-stat-label">Всего в базе</div>
+            <div class="data-stat-value" data-stat="total">{{ vacancy_stats.total }}</div>
+          </div>
+          <div class="data-stat">
+            <div class="data-stat-label">К отклику</div>
+            <div class="data-stat-value" data-stat="pending">{{ vacancy_stats.pending }}</div>
+          </div>
+          <div class="data-stat">
+            <div class="data-stat-label">Отклики</div>
+            <div class="data-stat-value" data-stat="applied">{{ vacancy_stats.applied }}</div>
+          </div>
+          <div class="data-stat">
+            <div class="data-stat-label">Отклонено</div>
+            <div class="data-stat-value" data-stat="rejected">{{ vacancy_stats.rejected }}</div>
+          </div>
+        </div>
+
+        <div class="data-actions">
+          <button type="button" class="btn btn-danger" id="clear-vacancies-btn">Очистить базу вакансий</button>
+          <a href="/?filter=pending" class="btn btn-secondary">К отклику → обновить с HH</a>
+        </div>
+
+        <p class="data-note">
+          Удаляются все вакансии, сопроводительные письма, отклики и отметки «отклонить».
+          Пользователи и загруженные резюме сохраняются.
+        </p>
+
+        <div id="clear-result-box"></div>
+      </div>
+    </section>
+    {% elif tab == 'pending' %}
     <section class="card">
       <div class="card-head">Ожидают подтверждения</div>
       {% if pending %}
@@ -81,4 +161,74 @@
     {% endif %}
   </main>
 </div>
+
+{% if tab == 'data' %}
+<script>
+(function () {
+  var clearBtn = document.getElementById('clear-vacancies-btn');
+  var loader = document.getElementById('admin-loader');
+  var loaderTitle = document.getElementById('admin-loader-title');
+  var loaderHint = document.getElementById('admin-loader-hint');
+  var resultBox = document.getElementById('clear-result-box');
+  if (!clearBtn) return;
+
+  function setStats(stats) {
+    document.querySelectorAll('[data-stat]').forEach(function (el) {
+      var key = el.getAttribute('data-stat');
+      if (stats && stats[key] !== undefined) el.textContent = stats[key];
+    });
+  }
+
+  function showResult(html, isError) {
+    if (!resultBox) return;
+    var cls = isError ? 'data-result err' : 'data-result ok';
+    resultBox.innerHTML = '<div class="' + cls + '">' + html + '</div>';
+  }
+
+  function setLoader(title, hint) {
+    if (loaderTitle) loaderTitle.textContent = title;
+    if (loaderHint) loaderHint.textContent = hint;
+    loader.classList.add('active');
+  }
+
+  clearBtn.addEventListener('click', function () {
+    var total = document.querySelector('[data-stat="total"]');
+    var n = total ? parseInt(total.textContent || '0', 10) : 0;
+    var msg = n > 0
+      ? 'Удалить все ' + n + ' вакансий, отклики и письма?\n\nПользователи и резюме сохранятся.'
+      : 'База вакансий уже пуста. Всё равно выполнить очистку?';
+    if (!window.confirm(msg)) return;
+
+    clearBtn.disabled = true;
+    setLoader('Очищаем базу', 'Удаляем вакансии и отклики…');
+    resultBox.innerHTML = '';
+
+    fetch('/api/admin/clear-vacancies', { method: 'POST', credentials: 'same-origin' })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+      .then(function (res) {
+        loader.classList.remove('active');
+        clearBtn.disabled = false;
+        if (!res.ok || !res.data.ok) {
+          showResult('<strong>Ошибка:</strong> ' + (res.data.error || 'не удалось очистить'), true);
+          return;
+        }
+        setStats(res.data.stats || {});
+        showResult(
+          '<strong>Готово за ' + (res.data.elapsed_sec ?? '?') + ' сек</strong><br>' +
+          'Удалено записей: <strong>' + (res.data.deleted ?? 0) + '</strong>. ' +
+          'Можно перейти в «К отклику» и нажать «Обновить с HH».',
+          false
+        );
+        if (loaderTitle) loaderTitle.textContent = 'Готово';
+        if (loaderHint) loaderHint.textContent = 'База очищена';
+      })
+      .catch(function (e) {
+        loader.classList.remove('active');
+        clearBtn.disabled = false;
+        showResult('<strong>Ошибка:</strong> ' + (e.message || 'сеть'), true);
+      });
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}
