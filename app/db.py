@@ -111,6 +111,12 @@ def _migrate_vacancy_columns(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE vacancies ADD COLUMN response_at TEXT")
     if "description" not in cols:
         conn.execute("ALTER TABLE vacancies ADD COLUMN description TEXT NOT NULL DEFAULT ''")
+    if "user_rejected" not in cols:
+        conn.execute(
+            "ALTER TABLE vacancies ADD COLUMN user_rejected INTEGER NOT NULL DEFAULT 0"
+        )
+    if "rejected_at" not in cols:
+        conn.execute("ALTER TABLE vacancies ADD COLUMN rejected_at TEXT")
 
 
 def _create_vacancies_table(conn: sqlite3.Connection) -> None:
@@ -135,6 +141,8 @@ def _create_vacancies_table(conn: sqlite3.Connection) -> None:
             last_letter_try_at TEXT,
             response_status TEXT,
             response_at TEXT,
+            user_rejected INTEGER NOT NULL DEFAULT 0,
+            rejected_at TEXT,
             applied INTEGER NOT NULL DEFAULT 0,
             first_seen TEXT NOT NULL,
             last_seen TEXT NOT NULL,
@@ -681,6 +689,7 @@ def list_vacancies(
     resume_id: int,
     *,
     hide_applied: bool = False,
+    hide_rejected: bool = False,
     only_applied: bool = False,
     fit_min: int | None = None,
     date_filter: str | None = None,
@@ -693,6 +702,8 @@ def list_vacancies(
         clauses.append("applied = 1")
     elif hide_applied:
         clauses.append("applied = 0")
+    if hide_rejected:
+        clauses.append("user_rejected = 0")
     if fit_min is not None:
         clauses.append("fit_score >= ?")
         params.append(fit_min)
@@ -722,6 +733,21 @@ def list_vacancies(
             params,
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def mark_rejected(vacancy_id: int, user_id: int) -> bool:
+    now = _now()
+    with connect() as conn:
+        cur = conn.execute(
+            """
+            UPDATE vacancies
+            SET user_rejected = 1, rejected_at = COALESCE(rejected_at, ?)
+            WHERE id = ? AND user_id = ? AND applied = 0
+            """,
+            (now, vacancy_id, user_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
 
 
 def mark_applied(vacancy_id: int, user_id: int) -> bool:

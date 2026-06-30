@@ -32,6 +32,7 @@ from app.db import (
     list_resumes,
     list_vacancies,
     mark_applied,
+    mark_rejected,
     set_vacancy_response,
     set_user_status,
     stats,
@@ -348,6 +349,7 @@ async def index(
             user["id"],
             rid,
             hide_applied=not only_applied,
+            hide_rejected=not only_applied,
             only_applied=only_applied,
             fit_min=fit_val,
             date_filter=date_filter or None,
@@ -389,6 +391,20 @@ def _view_query(
     if date_filter:
         parts.append(f"date_filter={date_filter}")
     return "&".join(parts)
+
+
+@app.post("/reject/{vacancy_id}")
+async def reject_vacancy(
+    request: Request,
+    vacancy_id: int,
+    resume_id: int | None = Form(None),
+):
+    user = require_login(request)
+    if redir := _redirect_if_needed(user):
+        return redir
+    mark_rejected(vacancy_id, user["id"])
+    q = _resume_query(request, resume_id)
+    return RedirectResponse(f"/?filter=pending{q}", status_code=303)
 
 
 @app.post("/apply/{vacancy_id}")

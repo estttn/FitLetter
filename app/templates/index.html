@@ -53,18 +53,55 @@
   .company { font-weight: 500; color: var(--ink); }
   .vacancy-link { color: var(--ink); text-decoration: none; }
   .vacancy-link:hover { color: var(--accent); text-decoration: underline; }
+  .td-letter { min-width: 140px; }
   .letter-box { margin-top: 8px; max-width: 520px; }
+  .letter-cell { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: nowrap; }
+  .letter-details { flex: 0 1 auto; min-width: 0; }
+  .letter-details > summary {
+    display: inline-flex; align-items: center; gap: 5px;
+    cursor: pointer; font-size: 12px; color: var(--muted);
+    white-space: nowrap; list-style: none; user-select: none;
+  }
+  .letter-details > summary::-webkit-details-marker { display: none; }
+  .letter-details > summary::marker { content: ""; }
+  .letter-details > summary::before {
+    content: "▸"; font-size: 10px; line-height: 1; color: var(--muted);
+    transition: transform 0.15s ease;
+  }
+  .letter-details[open] > summary::before { transform: rotate(90deg); }
   .letter {
     white-space: pre-wrap; background: var(--surface-muted); border: 1px solid var(--hairline);
     border-radius: var(--radius-sm); padding: 12px; font-size: 12px; line-height: 1.55;
   }
-  .letter-actions { display: flex; gap: 8px; margin-top: 8px; }
-  .btn-copy, .btn-regen, .btn-applied {
-    background: var(--surface-muted); border: 1px solid var(--hairline); border-radius: var(--radius-sm);
-    min-width: 44px; min-height: 44px; padding: 8px 12px; font-size: 12px; cursor: pointer; font-family: inherit; color: var(--ink);
+  .letter-source {
+    position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; pointer-events: none;
   }
-  .btn-copy:hover, .btn-regen:hover, .btn-applied:hover { background: var(--hairline-soft); }
-  .btn-copy.copied { color: var(--success-ink); border-color: rgba(31,138,101,0.3); }
+  .letter-actions { display: flex; gap: 8px; margin-top: 8px; }
+  .btn-icon, .btn-regen {
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--surface-muted); border: 1px solid var(--hairline); border-radius: var(--radius-sm);
+    width: 36px; height: 36px; min-width: 36px; padding: 0;
+    font-size: 16px; line-height: 1; cursor: pointer; font-family: inherit; color: var(--ink);
+  }
+  .btn-icon--copy svg { display: block; }
+  .btn-icon--copy:disabled, .btn-icon--copy.btn-icon--pending {
+    opacity: 0.35; cursor: not-allowed;
+  }
+  .btn-icon--copy:hover:not(:disabled):not(.btn-icon--pending) { background: var(--hairline-soft); }
+  .btn-icon--copy.copied { color: var(--success-ink); border-color: rgba(31,138,101,0.3); }
+  .btn-icon--reject {
+    color: var(--danger); border-color: rgba(180,35,24,0.2); background: var(--danger-bg);
+  }
+  .btn-icon--reject:hover { background: rgba(180,35,24,0.12); }
+  .btn-icon--apply {
+    color: var(--success-ink); border-color: rgba(31,138,101,0.25); background: var(--success-bg);
+  }
+  .btn-icon--apply:hover { background: rgba(31,138,101,0.14); }
+  .row-actions { display: flex; flex-direction: row; align-items: center; gap: 6px; white-space: nowrap; }
+  .row-actions form { display: inline-flex; margin: 0; }
+  .btn-regen {
+    width: auto; min-width: 44px; height: auto; min-height: 44px; padding: 8px 12px; font-size: 12px;
+  }
   .letter-failed {
     margin-top: 8px;
     padding: 8px 10px;
@@ -264,7 +301,7 @@
               <th>Вакансия</th>
               <th>ЗП</th>
               <th>Письмо</th>
-              <th>{% if filter == 'applied' %}Статус{% endif %}</th>
+              {% if filter == 'applied' %}<th>Статус</th>{% else %}<th aria-label="Действия"></th>{% endif %}
             </tr>
           </thead>
           <tbody>
@@ -281,40 +318,61 @@
               <td><span class="company">{{ v.company }}</span></td>
               <td><a class="vacancy-link" href="{{ v.url }}" target="_blank" rel="noopener">{{ v.title }}</a></td>
               <td style="color:var(--muted)">{{ v.salary }}</td>
-              <td>
-                <details>
-                  <summary style="cursor:pointer;font-size:12px;color:var(--muted)">{% if filter == 'applied' %}Текст отклика{% else %}Показать{% endif %}</summary>
-                  <div class="letter-box">
-                    {% if v.letter_status == 'pending' %}
-                    <div class="letter-pending" id="letter-{{ v.id }}">Генерируем письмо…</div>
-                    {% elif v.letter_status == 'failed' and not v.cover_letter %}
-                    <div class="letter-failed">
-                      Не получилось сгенерировать письмо.
-                      {% if v.letter_error %}<br>{{ v.letter_error }}{% endif %}
-                    </div>
-                    {% else %}
-                    <div class="letter" id="letter-{{ v.id }}">{{ v.cover_letter }}</div>
-                    {% endif %}
-                    <div class="letter-actions">
-                      {% if v.cover_letter %}
-                      <button type="button" class="btn-copy" data-target="letter-{{ v.id }}">Скопировать</button>
+              <td class="td-letter">
+                <div class="letter-cell">
+                  {% if v.cover_letter %}
+                  <button type="button" class="btn-icon btn-icon--copy" data-copy-source="letter-src-{{ v.id }}" title="Скопировать письмо" aria-label="Скопировать письмо">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <rect x="5.25" y="5.25" width="8.5" height="8.5" rx="1.25" stroke="currentColor" stroke-width="1.25"/>
+                      <path d="M3.75 11V4.25A1.25 1.25 0 0 1 5 3h5.25" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>
+                    </svg>
+                  </button>
+                  <textarea class="letter-source" id="letter-src-{{ v.id }}" readonly aria-hidden="true">{{ v.cover_letter }}</textarea>
+                  {% else %}
+                  <button type="button" class="btn-icon btn-icon--copy btn-icon--pending" disabled title="{% if v.letter_status == 'pending' %}Письмо генерируется{% else %}Письма пока нет{% endif %}" aria-label="Скопировать письмо">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <rect x="5.25" y="5.25" width="8.5" height="8.5" rx="1.25" stroke="currentColor" stroke-width="1.25"/>
+                      <path d="M3.75 11V4.25A1.25 1.25 0 0 1 5 3h5.25" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>
+                    </svg>
+                  </button>
+                  {% endif %}
+                  <details class="letter-details">
+                    <summary>{% if filter == 'applied' %}Текст отклика{% else %}Показать{% endif %}</summary>
+                    <div class="letter-box">
+                      {% if v.letter_status == 'pending' %}
+                      <div class="letter-pending" id="letter-{{ v.id }}">Генерируем письмо…</div>
+                      {% elif v.letter_status == 'failed' and not v.cover_letter %}
+                      <div class="letter-failed">
+                        Не получилось сгенерировать письмо.
+                        {% if v.letter_error %}<br>{{ v.letter_error }}{% endif %}
+                      </div>
+                      {% else %}
+                      <div class="letter" id="letter-{{ v.id }}">{{ v.cover_letter }}</div>
                       {% endif %}
-                      <form method="post" action="/regen/{{ v.id }}">
-                        <input type="hidden" name="resume_id" value="{{ resume_id }}" />
-                        <input type="hidden" name="filter_name" value="{{ filter }}" />
-                        <input type="hidden" name="date_filter" value="{{ date_filter }}" />
-                        <button type="submit" class="btn-regen">Сделать новый</button>
-                      </form>
+                      <div class="letter-actions">
+                        <form method="post" action="/regen/{{ v.id }}">
+                          <input type="hidden" name="resume_id" value="{{ resume_id }}" />
+                          <input type="hidden" name="filter_name" value="{{ filter }}" />
+                          <input type="hidden" name="date_filter" value="{{ date_filter }}" />
+                          <button type="submit" class="btn-regen">Сделать новый</button>
+                        </form>
+                      </div>
                     </div>
-                  </div>
-                </details>
+                  </details>
+                </div>
               </td>
               {% if filter != 'applied' %}
               <td>
-                <form method="post" action="/apply/{{ v.id }}">
-                  <input type="hidden" name="resume_id" value="{{ resume_id }}" />
-                  <button class="btn-applied" type="submit">Откликнулся</button>
-                </form>
+                <div class="row-actions">
+                  <form method="post" action="/reject/{{ v.id }}">
+                    <input type="hidden" name="resume_id" value="{{ resume_id }}" />
+                    <button class="btn-icon btn-icon--reject" type="submit" title="Отклонить" aria-label="Отклонить">✕</button>
+                  </form>
+                  <form method="post" action="/apply/{{ v.id }}">
+                    <input type="hidden" name="resume_id" value="{{ resume_id }}" />
+                    <button class="btn-icon btn-icon--apply" type="submit" title="Откликнулся" aria-label="Откликнулся">✓</button>
+                  </form>
+                </div>
               </td>
               {% endif %}
               {% if filter == 'applied' %}
@@ -358,17 +416,47 @@
 
 <script>
 (function () {
-  document.querySelectorAll('.btn-copy').forEach(function (btn) {
+  function copyToClipboard(text, onSuccess, onFail) {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(onSuccess).catch(function () {
+        fallbackCopy(text, onSuccess, onFail);
+      });
+      return;
+    }
+    fallbackCopy(text, onSuccess, onFail);
+  }
+
+  function fallbackCopy(text, onSuccess, onFail) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    var ok = false;
+    try {
+      ok = document.execCommand('copy');
+    } catch (e) {
+      ok = false;
+    }
+    document.body.removeChild(ta);
+    if (ok) onSuccess();
+    else if (onFail) onFail();
+  }
+
+  document.querySelectorAll('.btn-icon--copy[data-copy-source]').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      var el = document.getElementById(btn.dataset.target);
-      if (!el) return;
-      var text = el.innerText;
-      navigator.clipboard.writeText(text).then(function () {
-        btn.textContent = 'Скопировано';
+      var src = document.getElementById(btn.dataset.copySource);
+      if (!src) return;
+      var text = src.value || src.textContent || '';
+      if (!text.trim()) return;
+      copyToClipboard(text, function () {
         btn.classList.add('copied');
+        btn.setAttribute('title', 'Скопировано');
         setTimeout(function () {
-          btn.textContent = 'Скопировать';
           btn.classList.remove('copied');
+          btn.setAttribute('title', 'Скопировать письмо');
         }, 2000);
       });
     });
