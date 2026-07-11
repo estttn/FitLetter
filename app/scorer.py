@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import re
 
+from app.resume_roles import ROLE_BA, ROLE_COPYWRITER, ROLE_NON_IT_SKIP, ROLE_PM
+
 _ENGLISH_PHRASES = (
     "english",
     "\u0430\u043d\u0433\u043b\u0438\u0439\u0441\u043a",
@@ -181,6 +183,63 @@ _IT_CONTEXT = (
 
 _LEADER_WORD = "\u0440\u0443\u043a\u043e\u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044c"
 
+_ROLE_STRONG: dict[str, tuple[str, ...]] = {
+    ROLE_PM: (
+        "delivery",
+        "\u0432\u043d\u0435\u0434\u0440\u0435\u043d",
+        "presale",
+        "\u043f\u0440\u0435\u0441\u0435\u0439\u043b",
+        "pmo",
+        "enterprise",
+        "\u0440\u0443\u043a\u043e\u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044c \u043f\u0440\u043e\u0435\u043a\u0442",
+        "\u0440\u0443\u043a\u043e\u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044c \u043f\u0440\u043e\u0433\u0440\u0430\u043c\u043c",
+        "\u0440\u0443\u043a\u043e\u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044c it",
+        "\u0440\u0443\u043a\u043e\u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044c \u043d\u0430\u043f\u0440\u0430\u0432\u043b\u0435\u043d",
+        "\u0440\u0443\u043a\u043e\u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044c delivery",
+    ),
+    ROLE_COPYWRITER: (
+        "\u043a\u043e\u043f\u0438\u0440\u0430\u0439\u0442",
+        "copywriter",
+        "\u0440\u0435\u0434\u0430\u043a\u0442\u043e\u0440",
+        "\u043a\u043e\u043d\u0442\u0435\u043d\u0442",
+        "content",
+        "writer",
+        "techwriter",
+        "\u0442\u0435\u0445\u043d\u0438\u0447\u0435\u0441\u043a\u0438\u0439 \u043f\u0438\u0441\u0430\u0442\u0435\u043b\u044c",
+        "\u043c\u0430\u0440\u043a\u0435\u0442\u043e\u043b\u043e\u0433",
+    ),
+    ROLE_BA: (
+        "\u0431\u0438\u0437\u043d\u0435\u0441-\u0430\u043d\u0430\u043b\u0438\u0442\u0438\u043a",
+        "business analyst",
+        " ba",
+        "ba ",
+    ),
+}
+
+_ROLE_PARTIAL: dict[str, tuple[str, ...]] = {
+    ROLE_PM: (
+        "project",
+        "\u043f\u0440\u043e\u0434\u0436\u0435\u043a\u0442",
+        "\u043f\u0440\u043e\u0435\u043a\u0442",
+        "product",
+        "\u043f\u0440\u043e\u0434\u0443\u043a\u0442",
+        "pm",
+        "\u043c\u0435\u043d\u0435\u0434\u0436\u0435\u0440",
+    ),
+    ROLE_COPYWRITER: (
+        "writer",
+        "\u0442\u0435\u043a\u0441\u0442",
+        "b2b",
+        "it ",
+    ),
+    ROLE_BA: (
+        "\u0430\u043d\u0430\u043b\u0438\u0442\u0438\u043a",
+        "analyst",
+        "discovery",
+        "\u0442\u0437",
+    ),
+}
+
 
 def _norm(s: str) -> str:
     return (s or "").lower().replace("\u0451", "e")
@@ -231,10 +290,18 @@ def _has_it_context(title: str) -> bool:
     return any(k in t for k in _IT_CONTEXT)
 
 
-def _non_it_reason(title: str) -> str | None:
+def _profile_role(profile: dict) -> str:
+    return (profile.get("role") or ROLE_PM).strip().lower()
+
+
+def _non_it_reason(title: str, profile: dict | None = None) -> str | None:
     t = _norm(title)
     t_pad = _padded(t)
+    role = _profile_role(profile or {})
+    skip = set(ROLE_NON_IT_SKIP.get(role, ()))
     for kw in _NON_IT_PHRASES:
+        if kw in skip and kw in t:
+            continue
         if kw in t:
             return f"non-it: {kw.strip()}"
     for kw in _NON_IT_WORDS:
@@ -270,7 +337,7 @@ def score_vacancy(
         if _norm(kw) in t:
             return "no", f"exclude: {kw}"
 
-    non_it = _non_it_reason(title)
+    non_it = _non_it_reason(title, profile)
     if non_it:
         return "no", non_it
 
@@ -286,41 +353,24 @@ def score_vacancy(
         if _norm(kw) in _norm(f"{title} {description}"):
             return "no", f"english: {kw}"
 
-    if not any(_norm(kw) in t for kw in profile.get("include_title_keywords", [])):
-        return "no", "no PM/delivery keywords in title"
+    include = profile.get("include_title_keywords", [])
+    if include and not any(_norm(kw) in t for kw in include):
+        return "no", "no role keywords in title"
 
-    if _LEADER_WORD in t and not _has_it_context(title):
+    role = _profile_role(profile)
+    if role == ROLE_PM and _LEADER_WORD in t and not _has_it_context(title):
         return "no", "leader without IT/project context"
 
     salary_reason = _salary_too_low(salary, profile)
     if salary_reason:
         return "no", salary_reason
 
-    strong = [
-        "delivery",
-        "\u0432\u043d\u0435\u0434\u0440\u0435\u043d",
-        "presale",
-        "\u043f\u0440\u0435\u0441\u0435\u0439\u043b",
-        "pmo",
-        "enterprise",
-        "\u0440\u0443\u043a\u043e\u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044c \u043f\u0440\u043e\u0435\u043a\u0442",
-        "\u0440\u0443\u043a\u043e\u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044c \u043f\u0440\u043e\u0433\u0440\u0430\u043c\u043c",
-        "\u0440\u0443\u043a\u043e\u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044c it",
-        "\u0440\u0443\u043a\u043e\u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044c \u043d\u0430\u043f\u0440\u0430\u0432\u043b\u0435\u043d",
-        "\u0440\u0443\u043a\u043e\u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044c delivery",
-    ]
-    partial = [
-        "project",
-        "\u043f\u0440\u043e\u0434\u0436\u0435\u043a\u0442",
-        "\u043f\u0440\u043e\u0435\u043a\u0442",
-        "product",
-        "\u043f\u0440\u043e\u0434\u0443\u043a\u0442",
-        "pm",
-    ]
+    strong = _ROLE_STRONG.get(role, _ROLE_STRONG[ROLE_PM])
+    partial = _ROLE_PARTIAL.get(role, _ROLE_PARTIAL[ROLE_PM])
 
     if any(k in t for k in strong):
         return "yes", "strong role match"
-    if _LEADER_WORD in t and _has_it_context(title):
+    if role == ROLE_PM and _LEADER_WORD in t and _has_it_context(title):
         return "yes", "IT leader match"
     if any(k in t for k in partial):
         return "partial", "partial role match"

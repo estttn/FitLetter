@@ -334,6 +334,7 @@ async def resume_upload(
         text_content=text,
         display_name=user.get("display_name") or "",
         email=user.get("email") or "",
+        resume_name=resume_name,
     )
     request.session["resume_id"] = rid
     return RedirectResponse("/resumes?msg=ok", status_code=303)

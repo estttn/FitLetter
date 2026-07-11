@@ -10,6 +10,7 @@ from typing import Any
 
 from app.auth import ADMIN_PASSWORD, ADMIN_USERNAME, hash_password
 from app.candidate import profile_from_resume_text, profile_to_json
+from app.resume_roles import detect_role_from_name, merge_preserved_profile
 
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "hhscout.db"
 RESUMES_DIR = Path(__file__).resolve().parent.parent / "data" / "resumes"
@@ -264,11 +265,15 @@ def default_profile_json(
     *,
     display_name: str = "",
     email: str = "",
+    resume_name: str = "",
+    role: str | None = None,
 ) -> str:
     profile = profile_from_resume_text(
         resume_summary,
         display_name=display_name,
         email=email,
+        role=role,
+        resume_name=resume_name,
     )
     return profile_to_json(profile)
 
@@ -314,12 +319,30 @@ def update_resume_file(
     text_content: str,
     display_name: str = "",
     email: str = "",
+    resume_name: str = "",
 ) -> None:
-    profile_json = default_profile_json(
+    old_profile = {}
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT profile_json, name FROM resumes WHERE id = ? AND user_id = ?",
+            (resume_id, user_id),
+        ).fetchone()
+        if row and row["profile_json"]:
+            old_profile = json.loads(row["profile_json"])
+        if not resume_name and row:
+            resume_name = row["name"] or ""
+
+    role = old_profile.get("role") or detect_role_from_name(resume_name)
+    fresh = profile_from_resume_text(
         text_content,
         display_name=display_name,
         email=email,
+        role=role,
+        resume_name=resume_name,
     )
+    profile = merge_preserved_profile(old_profile, fresh)
+    profile_json = profile_to_json(profile)
+
     with connect() as conn:
         conn.execute(
             """
@@ -445,11 +468,14 @@ def create_resume(
     file_path: str | None = None,
     display_name: str = "",
     email: str = "",
+    role: str | None = None,
 ) -> int:
     profile_json = default_profile_json(
         text_content,
         display_name=display_name,
         email=email,
+        resume_name=name,
+        role=role or detect_role_from_name(name),
     )
     with connect() as conn:
         rid = _create_resume(
@@ -510,6 +536,15 @@ def load_resume_profile(resume: dict) -> dict:
     return json.loads(resume.get("profile_json") or "{}")
 
 
+def update_resume_profile(resume_id: int, user_id: int, profile: dict) -> None:
+    with connect() as conn:
+        conn.execute(
+            "UPDATE resumes SET profile_json = ? WHERE id = ? AND user_id = ?",
+            (profile_to_json(profile), resume_id, user_id),
+        )
+        conn.commit()
+
+
 def upsert_vacancy(row: dict) -> bool:
     now = _now()
     fit = row["fit"]
@@ -534,7 +569,6 @@ def upsert_vacancy(row: dict) -> bool:
             existing_letter = (exists["cover_letter"] or "").strip()
             incoming_letter = (row.get("cover_letter") or "").strip()
             incoming_status = row.get("letter_status", letter_status)
-            # Keep old letter only when not replacing (e.g. re-scrape without new text).
             if (
                 existing_letter
                 and exists["letter_status"] == "ok"

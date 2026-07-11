@@ -22,7 +22,7 @@ jobs:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
-          source: "app,scripts,requirements.txt,run.sh,deploy.sh,profile.example.json,.env.example"
+          source: "app,scripts,requirements.txt,run.sh,deploy.sh,profile.example.json,.env.example,resumes/pdf"
           target: "/opt/hh-job-scout"
           strip_components: 0
           overwrite: true
@@ -40,3 +40,4 @@ jobs:
             echo "${{ github.sha }}" | cut -c1-7 > data/deploy_rev.txt
             chmod +x deploy.sh run.sh scripts/*.sh 2>/dev/null || true
             ./deploy.sh
+            ./venv/bin/python scripts/setup_baturin_resumes.py --replace || true

@@ -14,6 +14,7 @@ _TELEGRAM_RE = re.compile(r"(?:telegram|телеграм|tg)[:\s]*@?([a-zA-Z0-9_
 _AT_HANDLE_RE = re.compile(r"(?<![a-zA-Z0-9])@([a-zA-Z][a-zA-Z0-9_]{3,31})")
 _SALARY_RE = re.compile(
     r"(?:зп|зарплат\w*|доход)[^\d]{0,20}(\d[\d\s]{2,6})(?:\s*[-–]\s*(\d[\d\s]{2,6}))?"
+    r"|(\d[\d\s]{2,6})\s*[-–]\s*(\d[\d\s]{2,6})\s*(?:₽|руб|на\s*руки)?"
     r"|(\d[\d\s]{2,5})\s*(?:тыс|k)\s*(?:на\s*руки|net|₽|руб)",
     re.I,
 )
@@ -96,14 +97,29 @@ def extract_candidate_meta(text: str, *, display_name: str = "", email: str = ""
     salary_note = ""
     sm = _SALARY_RE.search(t)
     if sm:
-        g = [x for x in sm.groups() if x]
-        if g:
-            low = re.sub(r"\s", "", g[0])
-            if len(g) > 1 and g[1]:
-                high = re.sub(r"\s", "", g[1])
-                salary_note = f"от {low} до {high} на руки"
-            else:
-                salary_note = f"от {low} на руки"
+        groups = [x for x in sm.groups() if x]
+        if len(groups) >= 2 and groups[1]:
+            low = re.sub(r"\s", "", groups[0])
+            high = re.sub(r"\s", "", groups[1])
+            salary_note = f"{low} – {high} ₽ на руки"
+        elif groups:
+            low = re.sub(r"\s", "", groups[0])
+            salary_note = f"от {low} ₽ на руки"
+    if not salary_note:
+        plain = re.search(
+            r"(\d[\d\s]{2,6})\s*[-–]\s*(\d[\d\s]{2,6})\s*₽\s*на\s*руки",
+            t,
+            re.I,
+        )
+        if plain:
+            low = re.sub(r"\s", "", plain.group(1))
+            high = re.sub(r"\s", "", plain.group(2))
+            salary_note = f"{low} – {high} ₽ на руки"
+        else:
+            plain_one = re.search(r"от\s+(\d[\d\s]{2,6})\s*₽", t, re.I)
+            if plain_one:
+                val = re.sub(r"\s", "", plain_one.group(1))
+                salary_note = f"от {val} ₽ на руки"
 
     if email and "email" not in contacts:
         contacts["email"] = email.strip().lower()
@@ -166,11 +182,18 @@ def profile_from_resume_text(
     display_name: str = "",
     email: str = "",
     search_defaults: dict | None = None,
+    role: str | None = None,
+    resume_name: str = "",
 ) -> dict:
-    base = search_defaults or search_profile_defaults()
+    from app.resume_roles import apply_role_template, detect_role_from_name
+
+    base = dict(search_defaults or search_profile_defaults())
     meta = extract_candidate_meta(text, display_name=display_name, email=email)
     base.update(meta)
     base["resume_summary"] = (text or "")[:8000]
+    resolved_role = role or detect_role_from_name(resume_name)
+    if resolved_role:
+        base = apply_role_template(base, resolved_role)
     return base
 
 
