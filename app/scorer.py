@@ -183,6 +183,36 @@ _IT_CONTEXT = (
 
 _LEADER_WORD = "\u0440\u0443\u043a\u043e\u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044c"
 
+_COPYWRITER_COPY_SIGNALS = (
+    "\u043a\u043e\u043f\u0438\u0440\u0430\u0439\u0442",
+    "copywriter",
+    "\u0440\u0435\u0434\u0430\u043a\u0442\u043e\u0440",
+    "techwriter",
+    "\u0442\u0435\u0445\u043d\u0438\u0447\u0435\u0441\u043a\u0438\u0439 \u043f\u0438\u0441\u0430\u0442\u0435\u043b\u044c",
+    "content writer",
+    "\u043a\u043e\u043d\u0442\u0435\u043d\u0442-\u0440\u0435\u0434\u0430\u043a\u0442\u043e\u0440",
+    "\u043a\u043e\u043d\u0442\u0435\u043d\u0442 \u0440\u0435\u0434\u0430\u043a\u0442\u043e\u0440",
+)
+
+_COPYWRITER_MARKETING_SIGNALS = (
+    "\u043c\u0430\u0440\u043a\u0435\u0442\u043e\u043b\u043e\u0433",
+    "\u043c\u0430\u0440\u043a\u0435\u0442\u0438\u043d\u0433",
+    "marketing",
+    "growth",
+    "performance",
+    "brand",
+    "\u043f\u0440\u043e\u0434\u0443\u043a\u0442\u043e\u0432\u044b\u0439",
+    "product marketing",
+    "go-to-market",
+    "gtm",
+    "demand generation",
+    "lead generation",
+    "\u043c\u0435\u0434\u0438\u0430\u0431\u0430\u0435\u0440",
+    "\u0442\u0440\u0430\u0444\u0438\u043a",
+    " seo",
+    "seo ",
+)
+
 _ROLE_STRONG: dict[str, tuple[str, ...]] = {
     ROLE_PM: (
         "delivery",
@@ -201,12 +231,11 @@ _ROLE_STRONG: dict[str, tuple[str, ...]] = {
         "\u043a\u043e\u043f\u0438\u0440\u0430\u0439\u0442",
         "copywriter",
         "\u0440\u0435\u0434\u0430\u043a\u0442\u043e\u0440",
-        "\u043a\u043e\u043d\u0442\u0435\u043d\u0442",
-        "content",
-        "writer",
+        "content writer",
         "techwriter",
         "\u0442\u0435\u0445\u043d\u0438\u0447\u0435\u0441\u043a\u0438\u0439 \u043f\u0438\u0441\u0430\u0442\u0435\u043b\u044c",
-        "\u043c\u0430\u0440\u043a\u0435\u0442\u043e\u043b\u043e\u0433",
+        "\u043a\u043e\u043d\u0442\u0435\u043d\u0442-\u0440\u0435\u0434\u0430\u043a\u0442\u043e\u0440",
+        "\u043a\u043e\u043d\u0442\u0435\u043d\u0442 \u0440\u0435\u0434\u0430\u043a\u0442\u043e\u0440",
     ),
     ROLE_BA: (
         "\u0431\u0438\u0437\u043d\u0435\u0441-\u0430\u043d\u0430\u043b\u0438\u0442\u0438\u043a",
@@ -228,9 +257,6 @@ _ROLE_PARTIAL: dict[str, tuple[str, ...]] = {
     ),
     ROLE_COPYWRITER: (
         "writer",
-        "\u0442\u0435\u043a\u0441\u0442",
-        "b2b",
-        "it ",
     ),
     ROLE_BA: (
         "\u0430\u043d\u0430\u043b\u0438\u0442\u0438\u043a",
@@ -292,6 +318,15 @@ def _has_it_context(title: str) -> bool:
 
 def _profile_role(profile: dict) -> str:
     return (profile.get("role") or ROLE_PM).strip().lower()
+
+
+def _copywriter_marketing_without_copy(title: str) -> str | None:
+    t = _norm(title)
+    if not any(k in t for k in _COPYWRITER_MARKETING_SIGNALS):
+        return None
+    if any(k in t for k in _COPYWRITER_COPY_SIGNALS):
+        return None
+    return "marketing role without copy focus"
 
 
 def _non_it_reason(title: str, profile: dict | None = None) -> str | None:
@@ -358,6 +393,11 @@ def score_vacancy(
         return "no", "no role keywords in title"
 
     role = _profile_role(profile)
+    if role == ROLE_COPYWRITER:
+        marketing_reason = _copywriter_marketing_without_copy(title)
+        if marketing_reason:
+            return "no", marketing_reason
+
     if role == ROLE_PM and _LEADER_WORD in t and not _has_it_context(title):
         return "no", "leader without IT/project context"
 

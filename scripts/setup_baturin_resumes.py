@@ -19,10 +19,12 @@ from app.db import (
     get_user_by_username,
     init_db,
     list_resumes,
+    load_resume_profile,
     update_resume_file,
+    update_resume_profile,
 )
 from app.resume_parser import extract_text
-from app.resume_roles import ROLE_BA, ROLE_COPYWRITER, ROLE_PM, apply_role_template
+from app.resume_roles import ROLE_BA, ROLE_COPYWRITER, ROLE_PM, apply_role_template, detect_role_from_name
 
 RESUME_PACK = (
     (ROLE_PM, "PM", ROOT / "resumes" / "pdf" / "HH-PM-Baturin.pdf"),
@@ -111,6 +113,18 @@ def _install_one(user_id: int, role: str, name: str, pdf_path: Path, *, display_
     return rid
 
 
+def _refresh_templates(user_id: int) -> None:
+    for resume in list_resumes(user_id):
+        profile = load_resume_profile(resume)
+        role = profile.get("role") or detect_role_from_name(resume.get("name") or "")
+        if not role:
+            print(f"skip resume id={resume['id']} name={resume['name']!r}: unknown role")
+            continue
+        updated = apply_role_template(profile, role)
+        update_resume_profile(int(resume["id"]), user_id, updated)
+        print(f"refreshed template resume id={resume['id']} role={role} name={resume['name']!r}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Setup PM / Copywriter / BA resumes")
     parser.add_argument("--username", help="FitLetter username (default: first active user)")
@@ -118,6 +132,11 @@ def main() -> None:
         "--replace",
         action="store_true",
         help="Delete existing resumes for user before install",
+    )
+    parser.add_argument(
+        "--refresh-templates",
+        action="store_true",
+        help="Re-apply role search/letter templates to existing resumes",
     )
     args = parser.parse_args()
 
@@ -127,10 +146,17 @@ def main() -> None:
         row = conn.execute("SELECT username, display_name, email FROM users WHERE id = ?", (user_id,)).fetchone()
     if not row:
         raise SystemExit(f"User id={user_id} missing")
+
+    print(f"user={row['username']!r} id={user_id}")
+
+    if args.refresh_templates and not args.replace:
+        _refresh_templates(user_id)
+        print("Templates refreshed.")
+        return
+
     display_name = row["display_name"] or row["username"]
     email = row["email"] or ""
 
-    print(f"user={row['username']!r} id={user_id}")
     if args.replace:
         _clear_resumes(user_id)
 
