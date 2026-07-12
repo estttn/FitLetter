@@ -32,34 +32,89 @@ _CLIENT_MARKERS = (
 )
 
 
+_VACANCY_STOPWORDS = frozenset(
+    "и в на с по для от до из к о об у за при про IT it".lower().split()
+)
+
+
 def _letter_mentions_clients(text: str, min_hits: int = 2) -> bool:
     t = (text or "").lower().replace("ё", "e")
     hits = sum(1 for marker in _CLIENT_MARKERS if marker in t)
     return hits >= min_hits
 
 
-def _pm_head_requirements(profile: dict, *, strict_clients: bool = False) -> str:
+def _letter_opening_has_clients(text: str, min_hits: int = 2) -> bool:
+    """Clients should appear in the hook — first ~500 chars after greeting."""
+    body = (text or "").strip()
+    if body.lower().startswith("добрый день"):
+        body = body.split("!", 1)[-1] if "!" in body[:40] else body[10:]
+    return _letter_mentions_clients(body[:500], min_hits=min_hits)
+
+
+def _letter_mentions_vacancy(text: str, title: str, company: str) -> bool:
+    t = (text or "").lower().replace("ё", "e")
+    company_clean = (company or "").strip()
+    if company_clean and company_clean != "—":
+        parts = [p for p in re.split(r"[\s«»\"']+", company_clean.lower()) if len(p) >= 4]
+        if parts and parts[0] in t:
+            return True
+    title_words = [
+        w
+        for w in re.findall(r"[a-zа-яё0-9]{4,}", (title or "").lower())
+        if w not in _VACANCY_STOPWORDS
+    ]
+    return any(w in t for w in title_words[:4])
+
+
+def _pm_head_requirements(
+    profile: dict,
+    *,
+    title: str,
+    company: str,
+    description: str,
+    strict_clients: bool = False,
+    strict_vacancy: bool = False,
+) -> str:
     clients = profile.get("letter_clients") or ""
     achievements = profile.get("letter_achievements") or ""
+    company_clean = company if company and company != "—" else "работодатель"
+    desc_hint = (
+        "Возьми 2 конкретных требования или задачи из описания вакансии выше и вплети их в письмо."
+        if (description or "").strip()
+        else f"Опирайся на название вакансии «{title}» и специфику компании {company_clean}."
+    )
     client_rule = (
-        "ОБЯЗАТЕЛЬНО назови дословно минимум 2 компании из списка заказчиков "
-        "(например: Концерн «Калашников», МТС, Минпромторг, СБР). Это ключевое требование."
+        "Сразу после «Добрый день!» первым содержательным предложением назови дословно "
+        "минимум 2 компании из списка заказчиков (крючок для HR). Это обязательно."
         if strict_clients
-        else "ОБЯЗАТЕЛЬНО упомяни минимум 2 заказчиков из списка — дословно названия компаний."
+        else (
+            "Сразу после «Добрый день!» первым содержательным предложением назови "
+            "минимум 2 заказчиков из списка — дословно названия компаний."
+        )
+    )
+    vacancy_rule = (
+        f"ОБЯЗАТЕЛЬНО упомяни компанию «{company_clean}» или ключевую формулировку из «{title}». "
+        f"{desc_hint} Письмо не должно подходить к другой вакансии."
+        if strict_vacancy
+        else (
+            f"Письмо только для вакансии «{title}» в {company_clean}. "
+            f"{desc_hint} Не используй универсальный шаблон."
+        )
     )
     return f"""
 Уровень: руководитель проектов / delivery, позиция 200 000+ ₽ на руки.
 Тон: уверенный, конкретный, без «буду рад рассмотреть», «надеюсь» и самоуничижения.
 {client_rule}
+{vacancy_rule}
 ОБЯЗАТЕЛЬНО включи 2–3 цифры/факта из достижений: {achievements}
 Заказчики для упоминания: {clients}
-Структура (7–9 предложений):
-1) зацепка под задачи вакансии;
-2) масштаб управления (портфель, команды, сроки);
-3–5) релевантный опыт + заказчики + ERP/автоматизация/presale;
-6) конкретное совпадение с задачами из описания вакансии;
-7) короткое предложение о готовности обсудить формат и старт.
-Пиши как кандидат senior-уровня, которого приглашают на интервью, а не как соискателя «на попробовать».
+Структура (7–9 предложений, каждый раз новая формулировка):
+1) «Добрый день!» + крючок с 2 заказчиками;
+2) связь опыта с задачами именно этой вакансии;
+3–5) масштаб, ERP/автоматизация/presale, релевантные клиенты;
+6) конкретное совпадение с 1–2 пунктами из описания вакансии;
+7) коротко — готов обсудить.
+Запрещено: одинаковое вступление и одни и те же формулировки для разных компаний.
 """
 
 BAD_PATTERNS = (
@@ -245,6 +300,7 @@ def generate_cover_letter(
     for attempt in range(4):
         strict = attempt < 3
         strict_clients = p.get("role") == ROLE_PM_HEAD and attempt >= 1
+        strict_vacancy = p.get("role") == ROLE_PM_HEAD and attempt >= 2
         try:
             letter = _deepseek_letter(
                 title,
@@ -253,16 +309,32 @@ def generate_cover_letter(
                 desc,
                 p,
                 strict_clients=strict_clients,
+                strict_vacancy=strict_vacancy,
             )
             last_letter = letter or ""
             if letter and is_complete_letter(letter, p, strict=strict):
-                if p.get("role") == ROLE_PM_HEAD and not _letter_mentions_clients(letter):
-                    incomplete_reason = "pm_head: no client names in letter"
-                    print(
-                        f"Incomplete letter attempt {attempt + 1} [{title[:40]}]: {incomplete_reason}",
-                        flush=True,
-                    )
-                    continue
+                if p.get("role") == ROLE_PM_HEAD:
+                    if not _letter_mentions_clients(letter):
+                        incomplete_reason = "pm_head: no client names in letter"
+                        print(
+                            f"Incomplete letter attempt {attempt + 1} [{title[:40]}]: {incomplete_reason}",
+                            flush=True,
+                        )
+                        continue
+                    if not _letter_opening_has_clients(letter):
+                        incomplete_reason = "pm_head: clients not in opening"
+                        print(
+                            f"Incomplete letter attempt {attempt + 1} [{title[:40]}]: {incomplete_reason}",
+                            flush=True,
+                        )
+                        continue
+                    if not _letter_mentions_vacancy(letter, title, company):
+                        incomplete_reason = "pm_head: vacancy not referenced"
+                        print(
+                            f"Incomplete letter attempt {attempt + 1} [{title[:40]}]: {incomplete_reason}",
+                            flush=True,
+                        )
+                        continue
                 return letter
             incomplete_reason = _why_incomplete(letter or "", p, strict=strict)
             print(
@@ -306,6 +378,7 @@ def _deepseek_letter(
     profile: dict,
     *,
     strict_clients: bool = False,
+    strict_vacancy: bool = False,
 ) -> str:
     company_clean = company if company and company != "—" else "компания"
     resume = profile.get("resume_summary") or ""
@@ -327,13 +400,25 @@ def _deepseek_letter(
 
     pm_head_block = ""
     if role == ROLE_PM_HEAD:
-        pm_head_block = _pm_head_requirements(profile, strict_clients=strict_clients)
+        pm_head_block = _pm_head_requirements(
+            profile,
+            title=title,
+            company=company_clean,
+            description=description,
+            strict_clients=strict_clients,
+            strict_vacancy=strict_vacancy,
+        )
 
     length_hint = "7–9 предложений" if role == ROLE_PM_HEAD else "5–7 предложений"
     tone_hint = (
         "Сильный деловой тон senior-уровня."
         if role == ROLE_PM_HEAD
         else "Деловой тон"
+    )
+    uniqueness_hint = (
+        f"- Письмо уникально для «{title}» в {company_clean}: другой вакансии оно не подойдёт\n"
+        if role == ROLE_PM_HEAD
+        else ""
     )
 
     prompt = f"""Напиши сопроводительное письмо на русском для отклика на HeadHunter.
@@ -343,7 +428,7 @@ def _deepseek_letter(
 Зарплата в вакансии: {sal_note}
 
 Текст вакансии:
-{description or "опирайся на название вакансии"}
+{description or "опирайся на название вакансии и компанию"}
 
 Профиль кандидата (используй ТОЛЬКО эти данные о кандидате, не выдумывай других людей):
 Имя: {name}
@@ -357,10 +442,10 @@ def _deepseek_letter(
 {resume[:6000]}
 
 Требования:
-- Письмо от лица кандидата на роль «{target_role}» под вакансию «{title}»
+- Письмо от лица кандидата на роль «{target_role}» под вакансию «{title}» в {company_clean}
 - Обращение к компании {company_clean}
-- 2-3 конкретные связи опыта кандидата с задачами вакансии
-- Не шаблонные фразы вроде «По описанию вижу пересечение»
+- 2-3 конкретные связи опыта кандидата с задачами именно этой вакансии (не общие фразы)
+{uniqueness_hint}- Не шаблонные фразы вроде «По описанию вижу пересечение»
 - НЕ упоминать английский язык и языковые навыки
 - Используй только имя {name}, город {location} и ожидания по ЗП {salary_expect} — не подставляй другие имена, города или суммы
 - {length_hint}, {tone_hint}
@@ -382,7 +467,7 @@ def _deepseek_letter(
     payload = {
         "model": _model(),
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.35 if role == ROLE_PM_HEAD else 0.5,
+        "temperature": 0.58 if role == ROLE_PM_HEAD else 0.5,
         "max_tokens": max_tokens,
     }
     req = urllib.request.Request(

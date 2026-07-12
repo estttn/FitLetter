@@ -31,6 +31,7 @@ from app.db import (
     list_pending_users,
     list_resumes,
     list_vacancies,
+    list_vacancies_for_letter_regen,
     mark_applied,
     mark_rejected,
     clear_all_vacancies,
@@ -116,8 +117,36 @@ def _ensure_resume_text(user: dict, resume_id: int) -> tuple[bool, str]:
         text_content=text,
         display_name=user.get("display_name") or "",
         email=user.get("email") or "",
+        resume_name=resume.get("name") or "",
     )
     return True, ""
+
+
+def _regenerate_vacancy_letter(user: dict, vacancy: dict, resume: dict) -> None:
+    profile = merge_profile_for_letters(
+        load_resume_profile(resume),
+        display_name=user.get("display_name") or "",
+        email=user.get("email") or "",
+        resume_text=resume.get("text_content") or "",
+        resume_name=resume.get("name") or "",
+    )
+    desc = (vacancy.get("description") or "").strip()
+    if not desc:
+        desc = fetch_vacancy_description(vacancy["url"])
+    letter = generate_cover_letter(
+        title=vacancy["title"],
+        company=vacancy["company"] or "—",
+        salary=vacancy["salary"] or "—",
+        description=desc,
+        profile=profile,
+    )
+    update_vacancy_letter(
+        int(vacancy["id"]),
+        user["id"],
+        cover_letter=letter,
+        letter_status="ok",
+        letter_error=None,
+    )
 
 
 @app.on_event("startup")
@@ -494,31 +523,7 @@ async def regenerate_letter(
             )
             return RedirectResponse(f"/?{q}&regen_error=1", status_code=303)
 
-        profile = merge_profile_for_letters(
-            load_resume_profile(resume),
-            display_name=user.get("display_name") or "",
-            email=user.get("email") or "",
-            resume_text=resume.get("text_content") or "",
-            resume_name=resume.get("name") or "",
-        )
-        desc = (v.get("description") or "").strip()
-        if not desc:
-            desc = fetch_vacancy_description(v["url"])
-
-        letter = generate_cover_letter(
-            title=v["title"],
-            company=v["company"] or "—",
-            salary=v["salary"] or "—",
-            description=desc,
-            profile=profile,
-        )
-        update_vacancy_letter(
-            vacancy_id,
-            user["id"],
-            cover_letter=letter,
-            letter_status="ok",
-            letter_error=None,
-        )
+        _regenerate_vacancy_letter(user, v, resume)
         return RedirectResponse(f"/?{q}&regen_ok=1", status_code=303)
     except Exception as e:
         try:
@@ -532,6 +537,53 @@ async def regenerate_letter(
         except Exception:
             pass
         return RedirectResponse(f"/?{q}&regen_error=1", status_code=303)
+
+
+@app.post("/regen-all")
+async def regenerate_all_letters(
+    request: Request,
+    resume_id: int | None = Form(None),
+    filter_name: str = Form("pending"),
+    date_filter: str = Form(""),
+):
+    user = require_login(request)
+    if redir := _redirect_if_needed(user):
+        return redir
+
+    rid = resume_id or request.session.get("resume_id")
+    q = _view_query(filter_name=filter_name, resume_id=rid, date_filter=date_filter)
+    if not rid:
+        return RedirectResponse(f"/?{q}&regen_error=no_resume", status_code=303)
+
+    resume = get_resume(int(rid), user["id"])
+    if not resume:
+        return RedirectResponse(f"/?{q}&regen_error=no_resume", status_code=303)
+
+    ok, err = _ensure_resume_text(user, int(rid))
+    if not ok:
+        return RedirectResponse(f"/?{q}&regen_error=1", status_code=303)
+
+    rows = list_vacancies_for_letter_regen(user["id"], int(rid), limit=50)
+    done = 0
+    failed = 0
+    for row in rows:
+        try:
+            _regenerate_vacancy_letter(user, row, resume)
+            done += 1
+        except Exception as e:
+            failed += 1
+            update_vacancy_letter(
+                int(row["id"]),
+                user["id"],
+                cover_letter="",
+                letter_status="failed",
+                letter_error=str(e)[:500],
+            )
+        time.sleep(0.4)
+
+    if failed and not done:
+        return RedirectResponse(f"/?{q}&regen_error=1", status_code=303)
+    return RedirectResponse(f"/?{q}&regen_ok={done}&regen_fail={failed}", status_code=303)
 
 
 @app.post("/response/{vacancy_id}")

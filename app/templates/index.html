@@ -297,7 +297,7 @@
       <div id="letters-progress-box"></div>
       <div id="collect-result-box"></div>
     {% if request.query_params.get('regen_ok') %}
-    <div class="collect-result ok">Письмо успешно пересоздано.</div>
+    <div class="collect-result ok">Письма пересозданы: {{ request.query_params.get('regen_ok') }}.{% if request.query_params.get('regen_fail') %} Ошибок: {{ request.query_params.get('regen_fail') }}.{% endif %}</div>
     {% elif request.query_params.get('regen_error') %}
     <div class="collect-result err">Не удалось пересоздать письмо, попробуйте ещё раз.</div>
     {% endif %}
@@ -311,7 +311,13 @@
       <div class="collect-panel-text">
         Обновление с HeadHunter для <strong>текущего резюме</strong> — парсинг, скоринг и генерация писем.
       </div>
-      <button type="button" class="collect-btn" id="collect-btn">Обновить с HH</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button type="button" class="collect-btn" id="collect-btn">Обновить с HH</button>
+        <form method="post" action="/regen-all" style="margin:0;">
+          {% if resume_id %}<input type="hidden" name="resume_id" value="{{ resume_id }}">{% endif %}
+          <button type="submit" class="btn btn-secondary" title="Перегенерировать все письма под каждую вакансию">Пересоздать все письма</button>
+        </form>
+      </div>
     </div>
     {% endif %}
 

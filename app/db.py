@@ -730,6 +730,27 @@ def update_vacancy_letter(
     _db_retry(_write)
 
 
+def list_vacancies_for_letter_regen(
+    user_id: int,
+    resume_id: int,
+    *,
+    limit: int = 50,
+) -> list[dict]:
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM vacancies
+            WHERE user_id = ? AND resume_id = ?
+              AND applied = 0 AND user_rejected = 0
+              AND letter_status IN ('ok', 'failed')
+            ORDER BY first_seen DESC
+            LIMIT ?
+            """,
+            (user_id, resume_id, limit),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def list_vacancies(
     user_id: int,
     resume_id: int,
