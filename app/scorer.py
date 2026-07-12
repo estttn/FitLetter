@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 
-from app.resume_roles import ROLE_BA, ROLE_COPYWRITER, ROLE_NON_IT_SKIP, ROLE_PM
+from app.resume_roles import ROLE_BA, ROLE_COPYWRITER, ROLE_NON_IT_SKIP, ROLE_PM, ROLE_PM_HEAD
 
 _ENGLISH_PHRASES = (
     "english",
@@ -227,6 +227,17 @@ _ROLE_STRONG: dict[str, tuple[str, ...]] = {
         "\u0440\u0443\u043a\u043e\u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044c \u043d\u0430\u043f\u0440\u0430\u0432\u043b\u0435\u043d",
         "\u0440\u0443\u043a\u043e\u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044c delivery",
     ),
+    ROLE_PM_HEAD: (
+        "\u0440\u0443\u043a\u043e\u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044c \u043f\u0440\u043e\u0435\u043a\u0442",
+        "\u0440\u0443\u043a\u043e\u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044c \u043f\u0440\u043e\u0435\u043a\u0442\u043d\u043e\u0433\u043e",
+        "\u0440\u0443\u043a\u043e\u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044c \u043d\u0430\u043f\u0440\u0430\u0432\u043b\u0435\u043d",
+        "\u0434\u0438\u0440\u0435\u043a\u0442\u043e\u0440 \u043f\u0440\u043e\u0435\u043a\u0442",
+        "head of delivery",
+        "delivery director",
+        "delivery manager",
+        "\u043f\u0440\u043e\u0435\u043a\u0442\u043d\u043e\u0433\u043e \u043e\u0444\u0438\u0441",
+        "pmo",
+    ),
     ROLE_COPYWRITER: (
         "\u043a\u043e\u043f\u0438\u0440\u0430\u0439\u0442",
         "copywriter",
@@ -254,6 +265,13 @@ _ROLE_PARTIAL: dict[str, tuple[str, ...]] = {
         "\u043f\u0440\u043e\u0434\u0443\u043a\u0442",
         "pm",
         "\u043c\u0435\u043d\u0435\u0434\u0436\u0435\u0440",
+    ),
+    ROLE_PM_HEAD: (
+        "delivery",
+        "\u043f\u043e\u0440\u0442\u0444\u0435\u043b\u044c",
+        "presale",
+        "\u043f\u0440\u0435\u0441\u0435\u0439\u043b",
+        "b2b",
     ),
     ROLE_COPYWRITER: (
         "writer",
@@ -400,6 +418,8 @@ def score_vacancy(
 
     if role == ROLE_PM and _LEADER_WORD in t and not _has_it_context(title):
         return "no", "leader without IT/project context"
+    if role == ROLE_PM_HEAD and _LEADER_WORD in t and not _has_it_context(title):
+        return "no", "leader without IT/project context"
 
     salary_reason = _salary_too_low(salary, profile)
     if salary_reason:
@@ -411,6 +431,8 @@ def score_vacancy(
     if any(k in t for k in strong):
         return "yes", "strong role match"
     if role == ROLE_PM and _LEADER_WORD in t and _has_it_context(title):
+        return "yes", "IT leader match"
+    if role == ROLE_PM_HEAD and _LEADER_WORD in t and _has_it_context(title):
         return "yes", "IT leader match"
     if any(k in t for k in partial):
         return "partial", "partial role match"

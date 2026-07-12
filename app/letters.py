@@ -245,7 +245,16 @@ def _deepseek_letter(
     salary_expect = profile.get("salary_note") or "не указана"
     target_role = profile.get("target_role") or "кандидат на вакансию"
     letter_focus = profile.get("letter_focus") or ""
+    letter_clients = profile.get("letter_clients") or ""
     footer = letter_footer(profile)
+
+    clients_block = ""
+    if letter_clients:
+        clients_block = (
+            f"Ключевые заказчики из опыта: {letter_clients}\n"
+            "Упомяни 1–2 наиболее релевантных вакансии компании (производство, госсектор, "
+            "телеком, enterprise), без длинного перечисления и без выдуманных проектов."
+        )
 
     prompt = f"""Напиши сопроводительное письмо на русском для отклика на HeadHunter.
 
@@ -262,6 +271,7 @@ def _deepseek_letter(
 Целевая роль: {target_role}
 Ожидания по ЗП: {salary_expect}
 {f"Акцент в письме: {letter_focus}" if letter_focus else ""}
+{clients_block}
 Резюме:
 {resume[:6000]}
 
@@ -271,7 +281,7 @@ def _deepseek_letter(
 - 2-3 конкретные связи опыта кандидата с задачами вакансии
 - Не шаблонные фразы вроде «По описанию вижу пересечение»
 - НЕ упоминать английский язык и языковые навыки
-- Используй только имя {name}, город {location}, зарплату {salary_expect} — не подставляй другие имена, города или суммы (не 250000 и не другие чужие цифры)
+- Используй только имя {name}, город {location} и ожидания по ЗП {salary_expect} — не подставляй другие имена, города или суммы
 - 5-7 предложений, деловой тон
 - Начни: «Добрый день!»
 - Основной текст БЕЗ контактов и подписи в конце

@@ -116,7 +116,7 @@ def _install_one(user_id: int, role: str, name: str, pdf_path: Path, *, display_
 def _refresh_templates(user_id: int) -> None:
     for resume in list_resumes(user_id):
         profile = load_resume_profile(resume)
-        role = profile.get("role") or detect_role_from_name(resume.get("name") or "")
+        role = detect_role_from_name(resume.get("name") or "") or profile.get("role")
         if not role:
             print(f"skip resume id={resume['id']} name={resume['name']!r}: unknown role")
             continue

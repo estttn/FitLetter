@@ -5,13 +5,20 @@ from __future__ import annotations
 from typing import Any
 
 ROLE_PM = "pm"
+ROLE_PM_HEAD = "pm_head"
 ROLE_COPYWRITER = "copywriter"
 ROLE_BA = "ba"
+
+LETTER_CLIENTS_PM_HEAD = (
+    "Концерн «Калашников», ООО «Гамма», Минпромторг, администрация Одинцовского района "
+    "Московской области, Инфосити, группа компаний СБР (Сегура, Белка, Роялтафт), МТС"
+)
 
 PROFILE_PRESERVE_KEYS = (
     "role",
     "target_role",
     "letter_focus",
+    "letter_clients",
     "search_queries",
     "include_title_keywords",
     "exclude_title_keywords",
@@ -50,7 +57,6 @@ ROLE_TEMPLATES: dict[str, dict[str, Any]] = {
             "менеджер проектов",
             "it project",
             "delivery",
-            "руководитель проектов",
         ],
         "exclude_title_keywords": [
             "product owner",
@@ -58,6 +64,11 @@ ROLE_TEMPLATES: dict[str, dict[str, Any]] = {
             "junior",
             "стажер",
             "стажёр",
+            "руководитель проект",
+            "руководитель проектного",
+            "директор проект",
+            "head of delivery",
+            "delivery director",
             "1c программист",
             "разработчик",
             "developer",
@@ -66,6 +77,47 @@ ROLE_TEMPLATES: dict[str, dict[str, Any]] = {
             "копирайт",
             "редактор",
             "маркетолог",
+        ],
+    },
+    ROLE_PM_HEAD: {
+        "role": ROLE_PM_HEAD,
+        "target_role": "Руководитель проектов",
+        "letter_focus": (
+            "Руководство портфелем заказных B2B IT-проектов: команда PM, пресейл, ERP, "
+            "автоматизация, сроки, качество, работа с крупными заказчиками."
+        ),
+        "letter_clients": LETTER_CLIENTS_PM_HEAD,
+        "salary_min_net": 250000,
+        "salary_comfort_net": 250000,
+        "search_queries": [
+            "руководитель проектов IT",
+            "руководитель проектного офиса",
+            "руководитель delivery IT",
+            "head of delivery IT",
+        ],
+        "include_title_keywords": [
+            "руководитель проект",
+            "руководитель проектного",
+            "директор проект",
+            "head of delivery",
+            "delivery director",
+            "delivery manager",
+            "руководитель направления",
+            "руководитель портфеля",
+        ],
+        "exclude_title_keywords": [
+            "product owner",
+            "scrum master",
+            "junior",
+            "стажер",
+            "стажёр",
+            "копирайт",
+            "редактор",
+            "маркетолог",
+            "аналитик",
+            "разработчик",
+            "developer",
+            "1c программист",
         ],
     },
     ROLE_COPYWRITER: {
@@ -183,6 +235,13 @@ def detect_role_from_name(name: str) -> str | None:
         return ROLE_COPYWRITER
     if n.strip() == "ba" or "аналитик" in n or "business analyst" in n:
         return ROLE_BA
+    if (
+        n.strip() in ("рп", "rp")
+        or "руководитель проект" in n
+        or "руководитель направления" in n
+        or "head of delivery" in n
+    ):
+        return ROLE_PM_HEAD
     if n.strip() == "pm" or "project manager" in n or "проджект" in n or "менеджер проектов" in n:
         return ROLE_PM
     return None
