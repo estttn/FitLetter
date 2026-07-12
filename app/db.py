@@ -742,7 +742,6 @@ def list_vacancies_for_letter_regen(
             SELECT * FROM vacancies
             WHERE user_id = ? AND resume_id = ?
               AND applied = 0 AND user_rejected = 0
-              AND letter_status IN ('ok', 'failed')
             ORDER BY first_seen DESC
             LIMIT ?
             """,

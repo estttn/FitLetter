@@ -40,6 +40,8 @@ def start_letter_job(
     user_id: int,
     resume_id: int,
     worker: Callable[[Callable[[int, int, int, int], None]], dict[str, Any]],
+    *,
+    initial_total: int = 0,
 ) -> bool:
     """Start background letter generation. Returns False if already running."""
     key = job_key(user_id, resume_id)
@@ -52,7 +54,8 @@ def start_letter_job(
             "phase": "letters",
             "letters_done": 0,
             "letters_failed": 0,
-            "letters_total": 0,
+            "letters_total": initial_total,
+            "letters_processed": 0,
             "error": None,
         }
 

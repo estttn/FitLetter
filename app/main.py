@@ -15,7 +15,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.auth import user_session_payload, verify_password
 from app.collect_jobs import get_progress
-from app.collector import collect, fetch_vacancy_description
+from app.collector import collect, fetch_vacancy_description, regenerate_vacancy_letter, start_regen_all_job
 from app.candidate import merge_profile_for_letters
 from app.db import (
     RESUMES_DIR,
@@ -43,7 +43,6 @@ from app.db import (
     update_vacancy_letter,
 )
 from app.deps import get_session_user, require_admin, require_login
-from app.letters import generate_cover_letter
 from app.resume_parser import SUPPORTED_SUFFIXES, extract_text
 
 app = FastAPI(title="Бюро Скаут")
@@ -130,23 +129,25 @@ def _regenerate_vacancy_letter(user: dict, vacancy: dict, resume: dict) -> None:
         resume_text=resume.get("text_content") or "",
         resume_name=resume.get("name") or "",
     )
-    desc = (vacancy.get("description") or "").strip()
-    if not desc:
-        desc = fetch_vacancy_description(vacancy["url"])
-    letter = generate_cover_letter(
-        title=vacancy["title"],
-        company=vacancy["company"] or "—",
-        salary=vacancy["salary"] or "—",
-        description=desc,
-        profile=profile,
-    )
-    update_vacancy_letter(
-        int(vacancy["id"]),
-        user["id"],
-        cover_letter=letter,
-        letter_status="ok",
-        letter_error=None,
-    )
+    regenerate_vacancy_letter(user, vacancy, resume, profile)
+
+
+def _start_regen_all(user: dict, resume_id: int) -> tuple[str | None, int, bool]:
+    """Return (error_code, total, started). error_code set on failure."""
+    resume = get_resume(resume_id, user["id"])
+    if not resume:
+        return "no_resume", 0, False
+    ok, err = _ensure_resume_text(user, resume_id)
+    if not ok:
+        return "no_text", 0, False
+    total = len(list_vacancies_for_letter_regen(user["id"], resume_id, limit=50))
+    if total <= 0:
+        return "empty", 0, False
+    profile = load_resume_profile(resume)
+    started, total = start_regen_all_job(user["id"], resume_id, profile)
+    if not started:
+        return "busy", total, False
+    return None, total, True
 
 
 @app.on_event("startup")
@@ -555,35 +556,34 @@ async def regenerate_all_letters(
     if not rid:
         return RedirectResponse(f"/?{q}&regen_error=no_resume", status_code=303)
 
-    resume = get_resume(int(rid), user["id"])
-    if not resume:
+    err_code, total, started = _start_regen_all(user, int(rid))
+    if err_code == "no_resume":
         return RedirectResponse(f"/?{q}&regen_error=no_resume", status_code=303)
-
-    ok, err = _ensure_resume_text(user, int(rid))
-    if not ok:
+    if err_code == "no_text":
         return RedirectResponse(f"/?{q}&regen_error=1", status_code=303)
+    if err_code == "empty":
+        return RedirectResponse(f"/?{q}&regen_error=empty", status_code=303)
+    if err_code == "busy":
+        return RedirectResponse(f"/?{q}&regen_error=busy", status_code=303)
+    return RedirectResponse(f"/?{q}&regen_started={total}", status_code=303)
 
-    rows = list_vacancies_for_letter_regen(user["id"], int(rid), limit=50)
-    done = 0
-    failed = 0
-    for row in rows:
-        try:
-            _regenerate_vacancy_letter(user, row, resume)
-            done += 1
-        except Exception as e:
-            failed += 1
-            update_vacancy_letter(
-                int(row["id"]),
-                user["id"],
-                cover_letter="",
-                letter_status="failed",
-                letter_error=str(e)[:500],
-            )
-        time.sleep(0.4)
 
-    if failed and not done:
-        return RedirectResponse(f"/?{q}&regen_error=1", status_code=303)
-    return RedirectResponse(f"/?{q}&regen_ok={done}&regen_fail={failed}", status_code=303)
+@app.post("/api/regen-all")
+async def api_regen_all(request: Request):
+    user = require_login(request)
+    if redir := _redirect_if_needed(user):
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    rid = request.session.get("resume_id")
+    if not rid:
+        return JSONResponse({"ok": False, "error": "Сначала выберите резюме"}, status_code=400)
+    err_code, total, started = _start_regen_all(user, int(rid))
+    if err_code == "empty":
+        return JSONResponse({"ok": False, "error": "Нет вакансий для пересоздания писем"}, status_code=400)
+    if err_code == "busy":
+        return JSONResponse({"ok": False, "error": "Уже идёт генерация писем — дождитесь завершения"}, status_code=409)
+    if err_code:
+        return JSONResponse({"ok": False, "error": err_code}, status_code=400)
+    return JSONResponse({"ok": True, "started": started, "total": total})
 
 
 @app.post("/response/{vacancy_id}")

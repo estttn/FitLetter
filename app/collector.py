@@ -18,6 +18,7 @@ from app.db import (
     count_failed_letters,
     count_pending_letters,
     list_failed_letters,
+    list_vacancies_for_letter_regen,
     get_resume,
     get_user_by_id,
     init_db,
@@ -322,6 +323,89 @@ def retry_failed_letters_parallel(
                 failed += 1
 
     return {"letters_done": done, "letters_failed": failed, "letters_total": total}
+
+
+def regenerate_vacancy_letter(user: dict, vacancy: dict, resume: dict, profile: dict) -> None:
+    desc = (vacancy.get("description") or "").strip()
+    if not desc:
+        desc = fetch_vacancy_description(vacancy["url"])
+    letter = generate_cover_letter(
+        title=vacancy["title"],
+        company=vacancy["company"] or "—",
+        salary=vacancy["salary"] or "—",
+        description=desc,
+        profile=profile,
+    )
+    update_vacancy_letter(
+        int(vacancy["id"]),
+        user["id"],
+        cover_letter=letter,
+        letter_status="ok",
+        letter_error=None,
+    )
+
+
+def regenerate_all_letters_parallel(
+    user_id: int,
+    resume_id: int,
+    profile: dict,
+    progress_cb: Callable[[int, int, int, int], None] | None = None,
+) -> dict:
+    user = get_user_by_id(user_id) or {}
+    resume = get_resume(resume_id, user_id) or {}
+    profile = _profile_for_collect(user_id, resume_id, profile)
+    rows = list_vacancies_for_letter_regen(user_id, resume_id, limit=50)
+    total = len(rows)
+    done = 0
+    failed = 0
+
+    if progress_cb:
+        progress_cb(0, total, 0, 0)
+
+    def one(row: dict) -> bool:
+        time.sleep(random.uniform(0.15, 0.45))
+        try:
+            regenerate_vacancy_letter(user, row, resume, profile)
+            return True
+        except Exception as e:
+            update_vacancy_letter(
+                int(row["id"]),
+                user_id,
+                cover_letter="",
+                letter_status="failed",
+                letter_error=str(e)[:500],
+            )
+            return False
+
+    if not rows:
+        return {"letters_done": 0, "letters_failed": 0, "letters_total": 0}
+
+    with ThreadPoolExecutor(max_workers=LETTER_WORKERS) as pool:
+        futures = [pool.submit(one, row) for row in rows]
+        for fut in as_completed(futures):
+            if fut.result():
+                done += 1
+            else:
+                failed += 1
+            if progress_cb:
+                progress_cb(done + failed, total, failed, done)
+
+    return {"letters_done": done, "letters_failed": failed, "letters_total": total}
+
+
+def start_regen_all_job(user_id: int, resume_id: int, profile: dict) -> tuple[bool, int]:
+    rows = list_vacancies_for_letter_regen(user_id, resume_id, limit=50)
+    total = len(rows)
+    if total <= 0:
+        return False, 0
+
+    def worker(progress_cb: Callable[[int, int, int, int], None]) -> dict:
+        return regenerate_all_letters_parallel(
+            user_id, resume_id, profile, progress_cb=progress_cb
+        )
+
+    started = start_letter_job(user_id, resume_id, worker, initial_total=total)
+    return started, total
 
 
 def collect_for_resume(
