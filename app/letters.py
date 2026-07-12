@@ -11,8 +11,56 @@ import urllib.request
 from pathlib import Path
 
 from app.candidate import letter_footer, merge_profile_for_letters
+from app.resume_roles import ROLE_PM_HEAD
 
 ROOT = Path(__file__).resolve().parent.parent
+
+_CLIENT_MARKERS = (
+    "калашников",
+    "гамма",
+    "минпром",
+    "одинцов",
+    "инфосити",
+    "infocity",
+    "сбр",
+    "сегура",
+    "белка",
+    "роялтафт",
+    "royal",
+    "мтс",
+    "mts",
+)
+
+
+def _letter_mentions_clients(text: str, min_hits: int = 2) -> bool:
+    t = (text or "").lower().replace("ё", "e")
+    hits = sum(1 for marker in _CLIENT_MARKERS if marker in t)
+    return hits >= min_hits
+
+
+def _pm_head_requirements(profile: dict, *, strict_clients: bool = False) -> str:
+    clients = profile.get("letter_clients") or ""
+    achievements = profile.get("letter_achievements") or ""
+    client_rule = (
+        "ОБЯЗАТЕЛЬНО назови дословно минимум 2 компании из списка заказчиков "
+        "(например: Концерн «Калашников», МТС, Минпромторг, СБР). Это ключевое требование."
+        if strict_clients
+        else "ОБЯЗАТЕЛЬНО упомяни минимум 2 заказчиков из списка — дословно названия компаний."
+    )
+    return f"""
+Уровень: руководитель проектов / delivery, позиция 200 000+ ₽ на руки.
+Тон: уверенный, конкретный, без «буду рад рассмотреть», «надеюсь» и самоуничижения.
+{client_rule}
+ОБЯЗАТЕЛЬНО включи 2–3 цифры/факта из достижений: {achievements}
+Заказчики для упоминания: {clients}
+Структура (7–9 предложений):
+1) зацепка под задачи вакансии;
+2) масштаб управления (портфель, команды, сроки);
+3–5) релевантный опыт + заказчики + ERP/автоматизация/presale;
+6) конкретное совпадение с задачами из описания вакансии;
+7) короткое предложение о готовности обсудить формат и старт.
+Пиши как кандидат senior-уровня, которого приглашают на интервью, а не как соискателя «на попробовать».
+"""
 
 BAD_PATTERNS = (
     "По описанию вижу пересечение с моим опытом",
@@ -47,7 +95,12 @@ _load_project_env()
 
 
 def _resolved_profile(profile: dict | None) -> dict:
-    return merge_profile_for_letters(profile or {})
+    p = profile or {}
+    return merge_profile_for_letters(
+        p,
+        resume_text=p.get("resume_summary") or "",
+        resume_name=p.get("resume_name") or "",
+    )
 
 
 def is_bad_letter(text: str) -> bool:
@@ -191,10 +244,25 @@ def generate_cover_letter(
     incomplete_reason = ""
     for attempt in range(4):
         strict = attempt < 3
+        strict_clients = p.get("role") == ROLE_PM_HEAD and attempt >= 1
         try:
-            letter = _deepseek_letter(title, company, salary, desc, p)
+            letter = _deepseek_letter(
+                title,
+                company,
+                salary,
+                desc,
+                p,
+                strict_clients=strict_clients,
+            )
             last_letter = letter or ""
             if letter and is_complete_letter(letter, p, strict=strict):
+                if p.get("role") == ROLE_PM_HEAD and not _letter_mentions_clients(letter):
+                    incomplete_reason = "pm_head: no client names in letter"
+                    print(
+                        f"Incomplete letter attempt {attempt + 1} [{title[:40]}]: {incomplete_reason}",
+                        flush=True,
+                    )
+                    continue
                 return letter
             incomplete_reason = _why_incomplete(letter or "", p, strict=strict)
             print(
@@ -236,6 +304,8 @@ def _deepseek_letter(
     salary: str,
     description: str,
     profile: dict,
+    *,
+    strict_clients: bool = False,
 ) -> str:
     company_clean = company if company and company != "—" else "компания"
     resume = profile.get("resume_summary") or ""
@@ -246,15 +316,25 @@ def _deepseek_letter(
     target_role = profile.get("target_role") or "кандидат на вакансию"
     letter_focus = profile.get("letter_focus") or ""
     letter_clients = profile.get("letter_clients") or ""
+    role = profile.get("role") or ""
     footer = letter_footer(profile)
 
     clients_block = ""
     if letter_clients:
         clients_block = (
-            f"Ключевые заказчики из опыта: {letter_clients}\n"
-            "Упомяни 1–2 наиболее релевантных вакансии компании (производство, госсектор, "
-            "телеком, enterprise), без длинного перечисления и без выдуманных проектов."
+            f"Ключевые заказчики из опыта (используй в тексте): {letter_clients}"
         )
+
+    pm_head_block = ""
+    if role == ROLE_PM_HEAD:
+        pm_head_block = _pm_head_requirements(profile, strict_clients=strict_clients)
+
+    length_hint = "7–9 предложений" if role == ROLE_PM_HEAD else "5–7 предложений"
+    tone_hint = (
+        "Сильный деловой тон senior-уровня."
+        if role == ROLE_PM_HEAD
+        else "Деловой тон"
+    )
 
     prompt = f"""Напиши сопроводительное письмо на русском для отклика на HeadHunter.
 
@@ -272,6 +352,7 @@ def _deepseek_letter(
 Ожидания по ЗП: {salary_expect}
 {f"Акцент в письме: {letter_focus}" if letter_focus else ""}
 {clients_block}
+{pm_head_block}
 Резюме:
 {resume[:6000]}
 
@@ -282,7 +363,7 @@ def _deepseek_letter(
 - Не шаблонные фразы вроде «По описанию вижу пересечение»
 - НЕ упоминать английский язык и языковые навыки
 - Используй только имя {name}, город {location} и ожидания по ЗП {salary_expect} — не подставляй другие имена, города или суммы
-- 5-7 предложений, деловой тон
+- {length_hint}, {tone_hint}
 - Начни: «Добрый день!»
 - Основной текст БЕЗ контактов и подписи в конце
 - После текста письма ОБЯЗАТЕЛЬНО добавь ровно этот блок контактов (скопируй дословно):
@@ -295,13 +376,13 @@ def _deepseek_letter(
     max_tokens = int(
         os.environ.get("DEEPSEEK_MAX_TOKENS_PRO")
         or os.environ.get("DEEPSEEK_MAX_TOKENS")
-        or "1200"
+        or ("1600" if role == ROLE_PM_HEAD else "1200")
     )
 
     payload = {
         "model": _model(),
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.5,
+        "temperature": 0.35 if role == ROLE_PM_HEAD else 0.5,
         "max_tokens": max_tokens,
     }
     req = urllib.request.Request(

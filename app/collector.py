@@ -94,6 +94,7 @@ def _profile_for_collect(user_id: int, resume_id: int, profile: dict) -> dict:
         display_name=user.get("display_name") or "",
         email=user.get("email") or "",
         resume_text=resume.get("text_content") or "",
+        resume_name=resume.get("name") or "",
     )
 
 

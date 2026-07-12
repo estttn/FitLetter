@@ -163,6 +163,7 @@ def merge_profile_for_letters(
     display_name: str = "",
     email: str = "",
     resume_text: str = "",
+    resume_name: str = "",
 ) -> dict:
     """Ensure profile has candidate fields; never fall back to another user's data."""
     out = dict(profile)
@@ -173,7 +174,11 @@ def merge_profile_for_letters(
             out[key] = val
     if text:
         out["resume_summary"] = text[:8000]
-    return out
+    if resume_name:
+        out["resume_name"] = resume_name
+    from app.resume_roles import enrich_profile_for_role
+
+    return enrich_profile_for_role(out, resume_name=resume_name)
 
 
 def profile_from_resume_text(

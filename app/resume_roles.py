@@ -19,6 +19,7 @@ PROFILE_PRESERVE_KEYS = (
     "target_role",
     "letter_focus",
     "letter_clients",
+    "letter_achievements",
     "search_queries",
     "include_title_keywords",
     "exclude_title_keywords",
@@ -83,10 +84,16 @@ ROLE_TEMPLATES: dict[str, dict[str, Any]] = {
         "role": ROLE_PM_HEAD,
         "target_role": "Руководитель проектов",
         "letter_focus": (
-            "Руководство портфелем заказных B2B IT-проектов: команда PM, пресейл, ERP, "
-            "автоматизация, сроки, качество, работа с крупными заказчиками."
+            "Руководство портфелем заказных B2B IT-проектов под ключ: команда PM, пресейл, "
+            "ERP, автоматизация, сроки, качество. Масштаб: до 8 проектов параллельно, "
+            "команды 5–8 человек, снижение просрочек на 35%, работа с enterprise-заказчиками."
         ),
         "letter_clients": LETTER_CLIENTS_PM_HEAD,
+        "letter_achievements": (
+            "12+ сданных коммерческих проектов; портфель до 8 проектов; снижение просрочек "
+            "на 35%; пресейл (5+ КП, 2 сделки); стабилизация эскалаций; ERP, автоматизация, "
+            "колл-центры, компьютерное зрение."
+        ),
         "salary_min_net": 250000,
         "salary_comfort_net": 250000,
         "search_queries": [
@@ -236,7 +243,8 @@ def detect_role_from_name(name: str) -> str | None:
     if n.strip() == "ba" or "аналитик" in n or "business analyst" in n:
         return ROLE_BA
     if (
-        n.strip() in ("рп", "rp")
+        n.strip() in ("рп", "rp", "руко", "ruko", "рук", "head")
+        or n.startswith("рук")
         or "руководитель проект" in n
         or "руководитель направления" in n
         or "head of delivery" in n
@@ -246,6 +254,16 @@ def detect_role_from_name(name: str) -> str | None:
         return ROLE_PM
     return None
 
+
+def resolve_role(profile: dict[str, Any], *, resume_name: str = "") -> str | None:
+    return detect_role_from_name(resume_name) or profile.get("role")
+
+
+def enrich_profile_for_role(profile: dict[str, Any], *, resume_name: str = "") -> dict[str, Any]:
+    role = resolve_role(profile, resume_name=resume_name)
+    if not role:
+        return profile
+    return apply_role_template(profile, role)
 
 def apply_role_template(profile: dict[str, Any], role: str) -> dict[str, Any]:
     template = ROLE_TEMPLATES.get(role)

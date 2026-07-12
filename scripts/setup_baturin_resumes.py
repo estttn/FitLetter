@@ -24,7 +24,7 @@ from app.db import (
     update_resume_profile,
 )
 from app.resume_parser import extract_text
-from app.resume_roles import ROLE_BA, ROLE_COPYWRITER, ROLE_PM, apply_role_template, detect_role_from_name
+from app.resume_roles import ROLE_BA, ROLE_COPYWRITER, ROLE_PM, ROLE_PM_HEAD, apply_role_template, detect_role_from_name, enrich_profile_for_role
 
 RESUME_PACK = (
     (ROLE_PM, "PM", ROOT / "resumes" / "pdf" / "HH-PM-Baturin.pdf"),
@@ -120,7 +120,8 @@ def _refresh_templates(user_id: int) -> None:
         if not role:
             print(f"skip resume id={resume['id']} name={resume['name']!r}: unknown role")
             continue
-        updated = apply_role_template(profile, role)
+        profile["resume_name"] = resume.get("name") or ""
+        updated = enrich_profile_for_role(profile, resume_name=profile["resume_name"])
         update_resume_profile(int(resume["id"]), user_id, updated)
         print(f"refreshed template resume id={resume['id']} role={role} name={resume['name']!r}")
 

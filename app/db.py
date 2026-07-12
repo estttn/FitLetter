@@ -10,7 +10,11 @@ from typing import Any
 
 from app.auth import ADMIN_PASSWORD, ADMIN_USERNAME, hash_password
 from app.candidate import profile_from_resume_text, profile_to_json
-from app.resume_roles import detect_role_from_name, merge_preserved_profile
+from app.resume_roles import (
+    apply_role_template,
+    detect_role_from_name,
+    merge_preserved_profile,
+)
 
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "hhscout.db"
 RESUMES_DIR = Path(__file__).resolve().parent.parent / "data" / "resumes"
@@ -332,7 +336,7 @@ def update_resume_file(
         if not resume_name and row:
             resume_name = row["name"] or ""
 
-    role = old_profile.get("role") or detect_role_from_name(resume_name)
+    role = detect_role_from_name(resume_name) or old_profile.get("role")
     fresh = profile_from_resume_text(
         text_content,
         display_name=display_name,
@@ -341,6 +345,8 @@ def update_resume_file(
         resume_name=resume_name,
     )
     profile = merge_preserved_profile(old_profile, fresh)
+    if role:
+        profile = apply_role_template(profile, role)
     profile_json = profile_to_json(profile)
 
     with connect() as conn:

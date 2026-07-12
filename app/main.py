@@ -499,6 +499,7 @@ async def regenerate_letter(
             display_name=user.get("display_name") or "",
             email=user.get("email") or "",
             resume_text=resume.get("text_content") or "",
+            resume_name=resume.get("name") or "",
         )
         desc = (v.get("description") or "").strip()
         if not desc:
