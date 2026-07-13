@@ -20,11 +20,46 @@ class VacancyItem:
     url: str
 
 
-def parse_initial_state(html: str) -> dict[str, Any] | None:
-    m = STATE_RE.search(html)
-    if not m:
+STATE_MARKER = 'id="HH-Lux-InitialState"'
+
+
+def _extract_initial_state_raw(html: str) -> str | None:
+    idx = html.find(STATE_MARKER)
+    if idx < 0:
+        m = STATE_RE.search(html)
+        return m.group(1) if m else None
+    start = html.find(">", idx)
+    if start < 0:
         return None
-    return json.loads(m.group(1))
+    start += 1
+    end = html.find("</template>", start)
+    if end < 0:
+        return None
+    return html[start:end].strip()
+
+
+def _loads_hh_json(raw: str) -> dict[str, Any] | None:
+    text = html_lib.unescape(raw.strip())
+    candidates = [text]
+    fixed = re.sub(r":\s*undefined\b", ": null", text)
+    fixed = re.sub(r":\s*NaN\b", ": null", fixed)
+    fixed = re.sub(r",\s*}", "}", fixed)
+    fixed = re.sub(r",\s*]", "]", fixed)
+    if fixed != text:
+        candidates.append(fixed)
+    for candidate in candidates:
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+    return None
+
+
+def parse_initial_state(html: str) -> dict[str, Any] | None:
+    raw = _extract_initial_state_raw(html)
+    if not raw:
+        return None
+    return _loads_hh_json(raw)
 
 
 def strip_html(text: str) -> str:
